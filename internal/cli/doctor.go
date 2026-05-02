@@ -53,6 +53,8 @@ func allDoctorChecks() []doctorCheck {
 		checkRootDir(),
 		checkShimFiles(),
 		checkShimsOnPATH(),
+		checkAtLeastOneVersion(),
+		checkActiveVersionResolves(),
 	}
 }
 
@@ -101,6 +103,44 @@ func checkShimsOnPATH() doctorCheck {
 			want := filepath.Clean(deps.Store.ShimsDir())
 			for _, p := range filepath.SplitList(deps.Getenv("PATH")) {
 				if filepath.Clean(p) == want {
+					return true
+				}
+			}
+			return false
+		},
+	}
+}
+
+func checkAtLeastOneVersion() doctorCheck {
+	return doctorCheck{
+		label:       "at least one version is installed",
+		remediation: "run 'llamavm install latest'",
+		run: func(_ context.Context, deps *Deps) bool {
+			tags, err := deps.Store.List()
+			return err == nil && len(tags) > 0
+		},
+	}
+}
+
+func checkActiveVersionResolves() doctorCheck {
+	return doctorCheck{
+		label:       "active version resolves to an installed tag",
+		remediation: "run 'llamavm use <version>' or pin one with 'llamavm pin <version>'",
+		run: func(_ context.Context, deps *Deps) bool {
+			cwd, err := deps.Getwd()
+			if err != nil {
+				cwd = ""
+			}
+			tag, err := deps.Resolver.Resolve(cwd)
+			if err != nil {
+				return false
+			}
+			tags, err := deps.Store.List()
+			if err != nil {
+				return false
+			}
+			for _, t := range tags {
+				if t == tag {
 					return true
 				}
 			}

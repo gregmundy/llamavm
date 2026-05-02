@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gregmundy/llamavm/internal/version"
 )
 
 // healthyDoctorDeps returns a Deps wired with stub implementations that make
@@ -147,5 +149,45 @@ func TestDoctor_ShimsNotOnPATH(t *testing.T) {
 	}
 	if !strings.Contains(out, `export PATH="$HOME/.llamavm/shims:$PATH"`) {
 		t.Fatalf("expected exact PATH-export remediation, got:\n%s", out)
+	}
+}
+
+func TestDoctor_NoVersionsInstalled(t *testing.T) {
+	deps, _ := runDoctorWithFakeShims(t, true)
+	deps.Store.(*fakeStore).installed = nil
+	deps.Store.(*fakeStore).hasActive = false
+	deps.Resolver = &fakeResolver{err: version.ErrNoActiveVersion}
+	out, _, err := runRoot(t, deps, "doctor")
+	if err == nil {
+		t.Fatal("expected error when no versions installed")
+	}
+	if !strings.Contains(out, "✗ at least one version is installed") {
+		t.Fatalf("expected versions fail line, got:\n%s", out)
+	}
+}
+
+func TestDoctor_ActiveVersionUnresolved(t *testing.T) {
+	deps, _ := runDoctorWithFakeShims(t, true)
+	deps.Resolver = &fakeResolver{err: version.ErrNoActiveVersion}
+	deps.Store.(*fakeStore).hasActive = false
+	deps.Store.(*fakeStore).active = ""
+	out, _, err := runRoot(t, deps, "doctor")
+	if err == nil {
+		t.Fatal("expected error when active version unresolved")
+	}
+	if !strings.Contains(out, "✗ active version resolves") {
+		t.Fatalf("expected active-version fail line, got:\n%s", out)
+	}
+}
+
+func TestDoctor_ActiveVersionPointsToUninstalled(t *testing.T) {
+	deps, _ := runDoctorWithFakeShims(t, true)
+	deps.Resolver = &fakeResolver{tag: "b9999"} // not in installed list
+	out, _, err := runRoot(t, deps, "doctor")
+	if err == nil {
+		t.Fatal("expected error when active version not installed")
+	}
+	if !strings.Contains(out, "✗ active version resolves") {
+		t.Fatalf("expected fail line for stale-active, got:\n%s", out)
 	}
 }
