@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -47,7 +49,11 @@ func runDoctor(ctx context.Context, deps *Deps) error {
 // progressively populate this slice; the empty starter form here just lets
 // `llamavm doctor` parse and report OK while the implementation is wired up.
 func allDoctorChecks() []doctorCheck {
-	return []doctorCheck{}
+	return []doctorCheck{
+		checkRootDir(),
+		checkShimFiles(),
+		checkShimsOnPATH(),
+	}
 }
 
 // doctorCheck pairs a human-readable label and remediation hint with the
@@ -56,4 +62,49 @@ type doctorCheck struct {
 	label       string
 	remediation string
 	run         func(ctx context.Context, deps *Deps) bool
+}
+
+func checkRootDir() doctorCheck {
+	return doctorCheck{
+		label:       "~/.llamavm directory exists",
+		remediation: "run 'llamavm install <version>' to create it",
+		run: func(_ context.Context, deps *Deps) bool {
+			// Root is the parent of the shims dir by convention (Store layout).
+			root := filepath.Dir(deps.Store.ShimsDir())
+			info, err := os.Stat(root)
+			return err == nil && info.IsDir()
+		},
+	}
+}
+
+func checkShimFiles() doctorCheck {
+	return doctorCheck{
+		label:       "~/.llamavm/shims contains llama-cli, llama-server, llama-quantize",
+		remediation: "run 'llamavm install <version>' to install the shims",
+		run: func(_ context.Context, deps *Deps) bool {
+			for _, name := range []string{"llama-cli", "llama-server", "llama-quantize"} {
+				p := filepath.Join(deps.Store.ShimsDir(), name)
+				if _, err := os.Stat(p); err != nil {
+					return false
+				}
+			}
+			return true
+		},
+	}
+}
+
+func checkShimsOnPATH() doctorCheck {
+	return doctorCheck{
+		label:       "~/.llamavm/shims is on PATH",
+		remediation: `add to your shell rc: export PATH="$HOME/.llamavm/shims:$PATH"`,
+		run: func(_ context.Context, deps *Deps) bool {
+			want := filepath.Clean(deps.Store.ShimsDir())
+			for _, p := range filepath.SplitList(deps.Getenv("PATH")) {
+				if filepath.Clean(p) == want {
+					return true
+				}
+			}
+			return false
+		},
+	}
 }
