@@ -34,6 +34,9 @@ func TestStore_PathsAndRoot(t *testing.T) {
 	if got, want := s.LogsDir(), filepath.Join(home, ".llamavm", "logs"); got != want {
 		t.Fatalf("LogsDir = %q, want %q", got, want)
 	}
+	if got, want := s.ShimsDir(), filepath.Join(home, ".llamavm", "shims"); got != want {
+		t.Fatalf("ShimsDir = %q, want %q", got, want)
+	}
 }
 
 func TestStore_IsInstalled(t *testing.T) {
