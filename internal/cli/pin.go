@@ -22,6 +22,12 @@ func newPinCmd(deps *Deps) *cobra.Command {
 }
 
 func runPin(deps *Deps, tag string) error {
+	// Reject malformed tags locally so a stray pin file can't trick the shim
+	// into resolving paths outside ~/.llamavm/versions/. Same character class
+	// as install (validTagRe in install.go).
+	if !validTagRe.MatchString(tag) {
+		return fmt.Errorf("invalid version format %q: %w", tag, ErrUserError)
+	}
 	// Getwd failure is an environment fault (deleted cwd, perms) — not user
 	// input, so it is not wrapped with ErrUserError.
 	cwd, err := deps.Getwd()

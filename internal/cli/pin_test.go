@@ -24,6 +24,33 @@ func TestPin_RequiresVersionArg(t *testing.T) {
 	}
 }
 
+func TestPin_InvalidTagFormatIsUserError(t *testing.T) {
+	cases := []string{
+		"",
+		"   ",
+		"foo bar",
+		"foo\nbar",
+		"../escape",
+		"a/b",
+	}
+	for _, bad := range cases {
+		t.Run(bad, func(t *testing.T) {
+			cwd, getwd := pinCwd(t)
+			deps := &Deps{Store: &fakeStore{installed: []string{bad}}, Getwd: getwd}
+			_, _, err := runRoot(t, deps, "pin", bad)
+			if err == nil {
+				t.Fatalf("expected error for tag %q", bad)
+			}
+			if !errors.Is(err, ErrUserError) {
+				t.Fatalf("err = %v, want chained ErrUserError", err)
+			}
+			if _, statErr := os.Stat(filepath.Join(cwd, ".llama-version")); statErr == nil {
+				t.Fatalf("invalid tag %q wrote .llama-version anyway", bad)
+			}
+		})
+	}
+}
+
 func TestPin_HappyPathWritesFile(t *testing.T) {
 	cwd, getwd := pinCwd(t)
 	store := &fakeStore{installed: []string{"b5046"}}
