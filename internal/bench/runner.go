@@ -3,9 +3,9 @@ package bench
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -23,9 +23,11 @@ type CommandRunner interface {
 }
 
 // Sentinel errors callers can match against to map to PRD §6.4 exit codes.
+// Both wrap fs.ErrNotExist so callers using errors.Is(err, fs.ErrNotExist) —
+// a more general "the thing is missing" check — also match.
 var (
-	ErrModelNotFound  = errors.New("model file not found")
-	ErrBinaryNotFound = errors.New("llama-cli binary not found for version")
+	ErrModelNotFound  = fmt.Errorf("model file not found: %w", fs.ErrNotExist)
+	ErrBinaryNotFound = fmt.Errorf("llama-cli binary not found for version: %w", fs.ErrNotExist)
 )
 
 // Runner orchestrates a single benchmark: cache lookup, exec, parse, cache write.
@@ -48,9 +50,16 @@ func (r *Runner) Run(ctx context.Context, tag, modelPath string, useCache bool) 
 		return Result{}, fmt.Errorf("stat model: %w", err)
 	}
 
+	// Mirror the model branch above: only treat NotExist as ErrBinaryNotFound
+	// (which the cli maps to a "run llamavm install" remediation). Other stat
+	// errors — permission denied, EIO, etc. — must propagate so the user sees
+	// the actual problem rather than a misleading "not installed" message.
 	bin := filepath.Join(r.VersionsDir, tag, "bin", "llama-cli")
 	if _, err := os.Stat(bin); err != nil {
-		return Result{}, fmt.Errorf("%s (%s): %w", tag, bin, ErrBinaryNotFound)
+		if os.IsNotExist(err) {
+			return Result{}, fmt.Errorf("%s (%s): %w", tag, bin, ErrBinaryNotFound)
+		}
+		return Result{}, fmt.Errorf("stat llama-cli: %w", err)
 	}
 
 	fp, err := Fingerprint(modelPath)
@@ -81,12 +90,16 @@ func (r *Runner) Run(ctx context.Context, tag, modelPath string, useCache bool) 
 		return Result{}, fmt.Errorf("%s: %w", tag, err)
 	}
 
+	now := r.Now
+	if now == nil {
+		now = time.Now
+	}
 	res := Result{
 		Version:          tag,
 		ModelFingerprint: fp,
 		TokensPerSec:     stats.TokensPerSec,
 		TotalTimeSeconds: stats.TotalTimeSeconds,
-		RanAt:            r.Now().UTC(),
+		RanAt:            now().UTC(),
 	}
 	if err := r.Cache.Store(res); err != nil {
 		// Cache write failure is non-fatal — return the result anyway.
