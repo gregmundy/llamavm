@@ -73,6 +73,20 @@ func TestClient_TagExists_NotFound(t *testing.T) {
 	}
 }
 
+func TestClient_Latest_MalformedJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer srv.Close()
+
+	c := New()
+	c.BaseURL = srv.URL
+	if _, err := c.Latest(context.Background()); err == nil {
+		t.Fatal("expected decode error on malformed JSON")
+	}
+}
+
 func TestClient_RateLimited(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-RateLimit-Remaining", "0")
@@ -85,6 +99,38 @@ func TestClient_RateLimited(t *testing.T) {
 	_, err := c.Latest(context.Background())
 	if !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("Latest = %v, want ErrRateLimited", err)
+	}
+}
+
+func TestClient_TagExists_RateLimited(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		http.Error(w, "rate limited", http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := New()
+	c.BaseURL = srv.URL
+	if err := c.TagExists(context.Background(), "b5046"); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("TagExists = %v, want ErrRateLimited", err)
+	}
+}
+
+func TestClient_Forbidden_NotRateLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 403 without X-RateLimit-Remaining: 0 → must NOT be classified as ErrRateLimited.
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := New()
+	c.BaseURL = srv.URL
+	_, err := c.Latest(context.Background())
+	if err == nil {
+		t.Fatal("expected error on 403")
+	}
+	if errors.Is(err, ErrRateLimited) {
+		t.Fatalf("403 without remaining=0 should not be ErrRateLimited, got %v", err)
 	}
 }
 
