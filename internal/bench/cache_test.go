@@ -114,6 +114,34 @@ func TestCache_StoreThenLookup(t *testing.T) {
 	}
 }
 
+func TestCache_LookupMissingDirIsMiss(t *testing.T) {
+	// Lookup on a Dir that doesn't exist behaves the same as a missing file:
+	// ErrCacheMiss, not a wrapped IO error.
+	c := &Cache{Dir: filepath.Join(t.TempDir(), "no-such-subdir")}
+	if _, err := c.Lookup("b5046", "deadbeef"); !errors.Is(err, ErrCacheMiss) {
+		t.Fatalf("Lookup with non-existent Dir: got %v, want ErrCacheMiss", err)
+	}
+}
+
+func TestCache_LookupReadErrorPropagates(t *testing.T) {
+	// Create a directory at the would-be cache file path, so os.ReadFile
+	// returns EISDIR — neither NotExist nor a JSON parse error. Lookup must
+	// surface this rather than silently treating it as a miss.
+	dir := t.TempDir()
+	c := &Cache{Dir: dir}
+	collidingPath := c.Path("b5046", "deadbeef")
+	if err := os.MkdirAll(collidingPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := c.Lookup("b5046", "deadbeef")
+	if err == nil {
+		t.Fatal("expected error when cache path is a directory")
+	}
+	if errors.Is(err, ErrCacheMiss) {
+		t.Fatalf("EISDIR should NOT be treated as a miss; got %v", err)
+	}
+}
+
 func TestCache_CorruptFileIsTreatedAsMiss(t *testing.T) {
 	dir := t.TempDir()
 	c := &Cache{Dir: dir}

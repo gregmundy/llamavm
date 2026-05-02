@@ -62,12 +62,16 @@ func (c *Cache) Path(tag, fingerprint string) string {
 }
 
 // Lookup returns the cached Result for (tag, fingerprint), or ErrCacheMiss if
-// the file is missing or malformed. A malformed cache file is treated as a
-// miss (not an error) so a manual edit can't break future runs.
+// the file does not exist or is malformed JSON. Other read errors (permission
+// denied, I/O failure, etc.) propagate so the user can fix them rather than
+// silently re-running every invocation.
 func (c *Cache) Lookup(tag, fingerprint string) (Result, error) {
 	body, err := os.ReadFile(c.Path(tag, fingerprint))
 	if err != nil {
-		return Result{}, ErrCacheMiss
+		if errors.Is(err, os.ErrNotExist) {
+			return Result{}, ErrCacheMiss
+		}
+		return Result{}, fmt.Errorf("read cache: %w", err)
 	}
 	var r Result
 	if err := json.Unmarshal(body, &r); err != nil {
