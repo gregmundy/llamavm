@@ -20,5 +20,6 @@ func NewRoot(deps *Deps, llamavmVersion string) *cobra.Command {
 	root.AddCommand(newInstallCmd(deps))
 	root.AddCommand(newUninstallCmd(deps))
 	root.AddCommand(newListCmd(deps))
+	root.AddCommand(newCurrentCmd(deps))
 	return root
 }
