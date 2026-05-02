@@ -88,4 +88,13 @@ type Deps struct {
 	Stderr        io.Writer
 	Now           func() time.Time
 	Getwd         func() (string, error)
+
+	// LookPath wraps exec.LookPath. Doctor uses it to verify cmake and git
+	// are reachable, and to confirm a llama-* shim resolves to ~/.llamavm/shims.
+	LookPath func(name string) (string, error)
+	// Getenv wraps os.Getenv. Doctor reads PATH from it.
+	Getenv func(key string) string
+	// XcodeSelectPath runs `xcode-select -p` and returns its trimmed stdout.
+	// Used by doctor to verify Xcode CLT is installed.
+	XcodeSelectPath func(ctx context.Context) (string, error)
 }

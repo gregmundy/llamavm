@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -34,6 +38,18 @@ func defaultShimSource() (string, error) {
 	return filepath.Join(filepath.Dir(self), "llamavm-shim"), nil
 }
 
+// defaultXcodeSelectPath wraps `xcode-select -p` using the existing
+// CommandRunner so doctor reuses the project's command-execution seam.
+func defaultXcodeSelectPath(runner builder.ExecRunner) func(ctx context.Context) (string, error) {
+	return func(ctx context.Context) (string, error) {
+		var stdout bytes.Buffer
+		if err := runner.Run(ctx, "xcode-select", []string{"-p"}, "", &stdout, io.Discard); err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(stdout.String()), nil
+	}
+}
+
 func main() {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -54,18 +70,21 @@ func main() {
 	}
 
 	deps := &cli.Deps{
-		Store:         store,
-		GitHub:        gh.New(),
-		Builder:       &builder.Builder{Runner: runner, Platform: platform},
-		Git:           runner,
-		Platform:      platform,
-		Resolver:      resolver,
-		ShimInstaller: installer,
-		Benchmarker:   benchmarker,
-		Stdout:        os.Stdout,
-		Stderr:        os.Stderr,
-		Now:           time.Now,
-		Getwd:         os.Getwd,
+		Store:           store,
+		GitHub:          gh.New(),
+		Builder:         &builder.Builder{Runner: runner, Platform: platform},
+		Git:             runner,
+		Platform:        platform,
+		Resolver:        resolver,
+		ShimInstaller:   installer,
+		Benchmarker:     benchmarker,
+		Stdout:          os.Stdout,
+		Stderr:          os.Stderr,
+		Now:             time.Now,
+		Getwd:           os.Getwd,
+		LookPath:        exec.LookPath,
+		Getenv:          os.Getenv,
+		XcodeSelectPath: defaultXcodeSelectPath(runner),
 	}
 
 	root := cli.NewRoot(deps, llamavmVersion)
