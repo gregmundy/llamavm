@@ -21,6 +21,8 @@ func newCurrentCmd(deps *Deps) *cobra.Command {
 }
 
 func runCurrent(deps *Deps) error {
+	// Getwd failure is an environment fault (deleted cwd, perms) — not user
+	// input, so it is not wrapped with ErrUserError.
 	cwd, err := deps.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
