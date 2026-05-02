@@ -27,11 +27,12 @@ func New(home string) *Store {
 	return &Store{home: home}
 }
 
-func (s *Store) Root() string        { return filepath.Join(s.home, ".llamavm") }
-func (s *Store) VersionsDir() string { return filepath.Join(s.Root(), "versions") }
-func (s *Store) LogsDir() string     { return filepath.Join(s.Root(), "logs") }
-func (s *Store) ShimsDir() string    { return filepath.Join(s.Root(), "shims") }
-func (s *Store) CurrentFile() string { return filepath.Join(s.Root(), "current") }
+func (s *Store) Root() string          { return filepath.Join(s.home, ".llamavm") }
+func (s *Store) VersionsDir() string   { return filepath.Join(s.Root(), "versions") }
+func (s *Store) LogsDir() string       { return filepath.Join(s.Root(), "logs") }
+func (s *Store) ShimsDir() string      { return filepath.Join(s.Root(), "shims") }
+func (s *Store) BenchmarksDir() string { return filepath.Join(s.Root(), "benchmarks") }
+func (s *Store) CurrentFile() string   { return filepath.Join(s.Root(), "current") }
 
 // VersionDir is the final install directory for a tag.
 func (s *Store) VersionDir(tag string) string {
