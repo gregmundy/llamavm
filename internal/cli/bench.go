@@ -19,8 +19,10 @@ func newBenchCmd(deps *Deps) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if args[0] == "all" {
-				// Implemented in Task 5; placeholder for now.
-				return errors.New("'bench all' is not yet implemented")
+				// Implemented in Task 5; placeholder for now. User-error
+				// classification (exit 2) is correct: "feature not in this
+				// build" is closer to bad input than to a system fault.
+				return fmt.Errorf("'bench all' is not yet implemented: %w", ErrUserError)
 			}
 			return runBenchSingle(cmd.Context(), deps, args[0], modelPath, !noCache)
 		},

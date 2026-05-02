@@ -103,8 +103,34 @@ func TestBench_CachedResultIsLabeled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bench: %v", err)
 	}
-	if !strings.Contains(strings.ToLower(out), "cached") {
-		t.Fatalf("stdout = %q, want it to mark cached results", out)
+	if !strings.Contains(out, "(cached)") {
+		t.Fatalf("stdout = %q, want it to contain literal '(cached)'", out)
+	}
+}
+
+func TestBench_BinaryNotFoundIsUserError(t *testing.T) {
+	bm := &fakeBenchmarker{errs: []error{bench.ErrBinaryNotFound}}
+	deps := &Deps{
+		Store:       &fakeStore{installed: []string{"b5046"}},
+		Benchmarker: bm,
+	}
+	_, _, err := runRoot(t, deps, "bench", "b5046", "--model", "/x/y.gguf")
+	if err == nil {
+		t.Fatal("expected error when binary missing")
+	}
+	if !errors.Is(err, ErrUserError) {
+		t.Fatalf("err = %v, want chained ErrUserError", err)
+	}
+}
+
+func TestBench_AllReturnsUserError(t *testing.T) {
+	deps := &Deps{Store: &fakeStore{}, Benchmarker: &fakeBenchmarker{}}
+	_, _, err := runRoot(t, deps, "bench", "all", "--model", "/x/y.gguf")
+	if err == nil {
+		t.Fatal("expected placeholder error from 'bench all'")
+	}
+	if !errors.Is(err, ErrUserError) {
+		t.Fatalf("err = %v, want chained ErrUserError (placeholder)", err)
 	}
 }
 
