@@ -4,6 +4,10 @@
 /dist/
 /build/
 
+# Per-directory pin written by `llamavm pin`; would otherwise show as untracked
+# when developing/smoke-testing from the repo root.
+.llama-version
+
 # Test artifacts
 *.test
 *.out
