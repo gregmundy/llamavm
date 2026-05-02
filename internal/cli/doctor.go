@@ -55,6 +55,9 @@ func allDoctorChecks() []doctorCheck {
 		checkShimsOnPATH(),
 		checkAtLeastOneVersion(),
 		checkActiveVersionResolves(),
+		checkLookPath("cmake", "brew install cmake"),
+		checkLookPath("git", "install git via Xcode CLT or 'brew install git'"),
+		checkXcodeCLT(),
 	}
 }
 
@@ -145,6 +148,28 @@ func checkActiveVersionResolves() doctorCheck {
 				}
 			}
 			return false
+		},
+	}
+}
+
+func checkLookPath(binary, remediation string) doctorCheck {
+	return doctorCheck{
+		label:       binary + " is on PATH",
+		remediation: remediation,
+		run: func(_ context.Context, deps *Deps) bool {
+			_, err := deps.LookPath(binary)
+			return err == nil
+		},
+	}
+}
+
+func checkXcodeCLT() doctorCheck {
+	return doctorCheck{
+		label:       "Xcode Command Line Tools are installed",
+		remediation: "run 'xcode-select --install'",
+		run: func(ctx context.Context, deps *Deps) bool {
+			out, err := deps.XcodeSelectPath(ctx)
+			return err == nil && out != ""
 		},
 	}
 }

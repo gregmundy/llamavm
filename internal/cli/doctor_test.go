@@ -191,3 +191,57 @@ func TestDoctor_ActiveVersionPointsToUninstalled(t *testing.T) {
 		t.Fatalf("expected fail line for stale-active, got:\n%s", out)
 	}
 }
+
+func TestDoctor_CmakeMissing(t *testing.T) {
+	deps, _ := runDoctorWithFakeShims(t, true)
+	deps.LookPath = func(name string) (string, error) {
+		if name == "cmake" {
+			return "", errors.New("not found")
+		}
+		return "/usr/bin/" + name, nil
+	}
+	out, _, err := runRoot(t, deps, "doctor")
+	if err == nil {
+		t.Fatal("expected error when cmake missing")
+	}
+	if !strings.Contains(out, "✗ cmake is on PATH") {
+		t.Fatalf("expected cmake fail line, got:\n%s", out)
+	}
+	if !strings.Contains(out, "brew install cmake") {
+		t.Fatalf("expected brew install cmake remediation, got:\n%s", out)
+	}
+}
+
+func TestDoctor_GitMissing(t *testing.T) {
+	deps, _ := runDoctorWithFakeShims(t, true)
+	deps.LookPath = func(name string) (string, error) {
+		if name == "git" {
+			return "", errors.New("not found")
+		}
+		return "/usr/bin/" + name, nil
+	}
+	out, _, err := runRoot(t, deps, "doctor")
+	if err == nil {
+		t.Fatal("expected error when git missing")
+	}
+	if !strings.Contains(out, "✗ git is on PATH") {
+		t.Fatalf("expected git fail line, got:\n%s", out)
+	}
+}
+
+func TestDoctor_XcodeCLTMissing(t *testing.T) {
+	deps, _ := runDoctorWithFakeShims(t, true)
+	deps.XcodeSelectPath = func(ctx context.Context) (string, error) {
+		return "", errors.New("xcode-select: error: unable to get active developer directory")
+	}
+	out, _, err := runRoot(t, deps, "doctor")
+	if err == nil {
+		t.Fatal("expected error when xcode-select fails")
+	}
+	if !strings.Contains(out, "✗ Xcode Command Line Tools are installed") {
+		t.Fatalf("expected xcode CLT fail line, got:\n%s", out)
+	}
+	if !strings.Contains(out, "xcode-select --install") {
+		t.Fatalf("expected xcode-select --install remediation, got:\n%s", out)
+	}
+}
