@@ -6,16 +6,32 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/gregmundy/llamavm/internal/builder"
 	"github.com/gregmundy/llamavm/internal/cli"
 	gh "github.com/gregmundy/llamavm/internal/github"
+	"github.com/gregmundy/llamavm/internal/shim"
 	"github.com/gregmundy/llamavm/internal/version"
 )
 
 var llamavmVersion = "dev"
+
+// defaultShimSource resolves the path of the llamavm-shim binary.
+// Production layout (Homebrew, go install, GoReleaser) puts llamavm-shim
+// next to llamavm in the same directory.
+func defaultShimSource() (string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("locate llamavm executable: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(self); err == nil {
+		self = resolved
+	}
+	return filepath.Join(filepath.Dir(self), "llamavm-shim"), nil
+}
 
 func main() {
 	home, err := os.UserHomeDir()
@@ -27,16 +43,20 @@ func main() {
 	platform := builder.DefaultPlatform
 	store := version.New(home)
 	runner := builder.ExecRunner{}
+	resolver := version.NewResolver(store)
+	installer := &shim.Installer{Source: defaultShimSource}
 
 	deps := &cli.Deps{
-		Store:    store,
-		GitHub:   gh.New(),
-		Builder:  &builder.Builder{Runner: runner, Platform: platform},
-		Git:      runner,
-		Platform: platform,
-		Stdout:   os.Stdout,
-		Stderr:   os.Stderr,
-		Now:      time.Now,
+		Store:         store,
+		GitHub:        gh.New(),
+		Builder:       &builder.Builder{Runner: runner, Platform: platform},
+		Git:           runner,
+		Platform:      platform,
+		Resolver:      resolver,
+		ShimInstaller: installer,
+		Stdout:        os.Stdout,
+		Stderr:        os.Stderr,
+		Now:           time.Now,
 	}
 
 	root := cli.NewRoot(deps, llamavmVersion)
@@ -45,7 +65,6 @@ func main() {
 	defer cancel()
 
 	if err := root.ExecuteContext(ctx); err != nil {
-		// Cobra prints the error itself; we translate to PRD §6.4 exit codes.
 		if errors.Is(err, cli.ErrUserError) {
 			os.Exit(2)
 		}
