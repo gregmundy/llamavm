@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gregmundy/llamavm/internal/bench"
 	"github.com/gregmundy/llamavm/internal/builder"
 	"github.com/gregmundy/llamavm/internal/cli"
 	gh "github.com/gregmundy/llamavm/internal/github"
@@ -45,6 +46,12 @@ func main() {
 	runner := builder.ExecRunner{}
 	resolver := version.NewResolver(store, home)
 	installer := &shim.Installer{Source: defaultShimSource}
+	benchmarker := &bench.Runner{
+		Cmd:         runner,
+		Cache:       &bench.Cache{Dir: store.BenchmarksDir()},
+		VersionsDir: store.VersionsDir(),
+		Now:         time.Now,
+	}
 
 	deps := &cli.Deps{
 		Store:         store,
@@ -54,6 +61,7 @@ func main() {
 		Platform:      platform,
 		Resolver:      resolver,
 		ShimInstaller: installer,
+		Benchmarker:   benchmarker,
 		Stdout:        os.Stdout,
 		Stderr:        os.Stderr,
 		Now:           time.Now,
