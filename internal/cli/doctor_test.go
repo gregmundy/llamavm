@@ -61,8 +61,10 @@ func TestDoctor_AllChecksPass(t *testing.T) {
 	if strings.Contains(out, "✗") {
 		t.Fatalf("expected no ✗ markers in healthy output:\n%s", out)
 	}
-	if !strings.Contains(out, "OK") {
-		t.Fatalf("expected trailing OK summary, got:\n%s", out)
+	// Anchor to the trailing line so a stray "OK" substring in some future
+	// check label can't satisfy this assertion.
+	if !strings.HasSuffix(strings.TrimRight(out, "\n"), "\nOK") {
+		t.Fatalf("expected output to end with a line equal to OK, got:\n%s", out)
 	}
 }
 

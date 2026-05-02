@@ -17,6 +17,11 @@ func newDoctorCmd(deps *Deps) *cobra.Command {
 			"active version, and required toolchain (cmake, git, Xcode CLT). " +
 			"Prints one line per check; exits non-zero if any check fails.",
 		Args: cobra.NoArgs,
+		// Doctor already prints a per-check transcript and a FAIL summary to
+		// stdout; cobra's default `Error: ...` line on RunE failure would just
+		// duplicate that on stderr, so silence it. Exit code still flows via
+		// ErrUserError → main.go → os.Exit(2).
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runDoctor(cmd.Context(), deps)
 		},
