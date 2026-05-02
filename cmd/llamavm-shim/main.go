@@ -24,8 +24,14 @@ func main() {
 			// PRD §3.12.2: the shim must consult .llama-version in cwd
 			// before falling back to ~/.llamavm/current. If Getwd fails
 			// (extremely rare — deleted cwd, etc.) pass "" and let the
-			// resolver fall back to the current file.
-			cwd, _ := os.Getwd()
+			// resolver fall back to the current file. Surface a one-line
+			// warning so a silent miss doesn't masquerade as a wrong-pin.
+			cwd, gwErr := os.Getwd()
+			if gwErr != nil {
+				fmt.Fprintf(os.Stderr,
+					"llamavm: cannot determine working directory (%v); ignoring .llama-version\n",
+					gwErr)
+			}
 			return resolver.Resolve(cwd)
 		},
 		VersionsDir: store.VersionsDir(),
