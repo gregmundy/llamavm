@@ -21,7 +21,11 @@ func newCurrentCmd(deps *Deps) *cobra.Command {
 }
 
 func runCurrent(deps *Deps) error {
-	tag, err := deps.Resolver.Resolve()
+	cwd, err := deps.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+	tag, err := deps.Resolver.Resolve(cwd)
 	if err != nil {
 		if errors.Is(err, version.ErrNoActiveVersion) {
 			return fmt.Errorf("No active version: %w", ErrUserError)
