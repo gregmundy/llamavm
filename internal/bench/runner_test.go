@@ -58,7 +58,7 @@ func touchLlamaCLI(t *testing.T, versionsDir, tag string) string {
 }
 
 func TestRunner_HappyPath_PassesPRDArgs(t *testing.T) {
-	model := writeModelFile(t, bytes(8192, 'm'))
+	model := writeModelFile(t, fillBytes(8192, 'm'))
 	r := newRunnerWithCache(t, &fakeCmdRunner{
 		stderrFn: func(w io.Writer) { _, _ = w.Write([]byte(modernStderr)) },
 	}, time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC))
@@ -85,7 +85,7 @@ func TestRunner_HappyPath_PassesPRDArgs(t *testing.T) {
 }
 
 func TestRunner_CacheHitSkipsExec(t *testing.T) {
-	model := writeModelFile(t, bytes(8192, 'm'))
+	model := writeModelFile(t, fillBytes(8192, 'm'))
 	r := newRunnerWithCache(t, &fakeCmdRunner{}, time.Now())
 	touchLlamaCLI(t, r.VersionsDir, "b5046")
 
@@ -117,7 +117,7 @@ func TestRunner_CacheHitSkipsExec(t *testing.T) {
 }
 
 func TestRunner_NoCacheBypassesCache(t *testing.T) {
-	model := writeModelFile(t, bytes(8192, 'm'))
+	model := writeModelFile(t, fillBytes(8192, 'm'))
 	r := newRunnerWithCache(t, &fakeCmdRunner{
 		stderrFn: func(w io.Writer) { _, _ = w.Write([]byte(modernStderr)) },
 	}, time.Now())
@@ -142,7 +142,7 @@ func TestRunner_NoCacheBypassesCache(t *testing.T) {
 }
 
 func TestRunner_FreshResultIsCached(t *testing.T) {
-	model := writeModelFile(t, bytes(8192, 'm'))
+	model := writeModelFile(t, fillBytes(8192, 'm'))
 	r := newRunnerWithCache(t, &fakeCmdRunner{
 		stderrFn: func(w io.Writer) { _, _ = w.Write([]byte(modernStderr)) },
 	}, time.Now())
@@ -177,7 +177,7 @@ func TestRunner_MissingModelIsError(t *testing.T) {
 }
 
 func TestRunner_VersionWithNoBinaryIsError(t *testing.T) {
-	model := writeModelFile(t, bytes(8192, 'm'))
+	model := writeModelFile(t, fillBytes(8192, 'm'))
 	r := newRunnerWithCache(t, &fakeCmdRunner{}, time.Now())
 	// Note: not calling touchLlamaCLI — version dir has no binary.
 	_, err := r.Run(context.Background(), "b5046", model, true)
@@ -190,7 +190,7 @@ func TestRunner_VersionWithNoBinaryIsError(t *testing.T) {
 }
 
 func TestRunner_ExecFailureBubblesUp(t *testing.T) {
-	model := writeModelFile(t, bytes(8192, 'm'))
+	model := writeModelFile(t, fillBytes(8192, 'm'))
 	r := newRunnerWithCache(t, &fakeCmdRunner{err: errors.New("exit status 1")}, time.Now())
 	touchLlamaCLI(t, r.VersionsDir, "b5046")
 	_, err := r.Run(context.Background(), "b5046", model, true)
@@ -200,7 +200,7 @@ func TestRunner_ExecFailureBubblesUp(t *testing.T) {
 }
 
 func TestRunner_UnparseableStderrIsErrParse(t *testing.T) {
-	model := writeModelFile(t, bytes(8192, 'm'))
+	model := writeModelFile(t, fillBytes(8192, 'm'))
 	r := newRunnerWithCache(t, &fakeCmdRunner{
 		stderrFn: func(w io.Writer) { _, _ = w.Write([]byte("totally unrelated output\n")) },
 	}, time.Now())

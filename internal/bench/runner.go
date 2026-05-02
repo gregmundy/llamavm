@@ -1,7 +1,7 @@
 package bench
 
 import (
-	stdbytes "bytes"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -71,7 +71,7 @@ func (r *Runner) Run(ctx context.Context, tag, modelPath string, useCache bool) 
 		"--no-display-prompt",
 		"-ngl", "99",
 	}
-	var stderr stdbytes.Buffer
+	var stderr bytes.Buffer
 	if err := r.Cmd.Run(ctx, bin, args, "", io.Discard, &stderr); err != nil {
 		return Result{}, fmt.Errorf("run llama-cli: %w", err)
 	}

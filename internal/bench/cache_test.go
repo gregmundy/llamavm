@@ -20,7 +20,7 @@ func writeModelFile(t *testing.T, body []byte) string {
 }
 
 func TestFingerprint_HexAndLength(t *testing.T) {
-	path := writeModelFile(t, bytes(8192, 'x'))
+	path := writeModelFile(t, fillBytes(8192, 'x'))
 	fp, err := Fingerprint(path)
 	if err != nil {
 		t.Fatalf("Fingerprint: %v", err)
@@ -37,9 +37,9 @@ func TestFingerprint_HexAndLength(t *testing.T) {
 
 func TestFingerprint_DependsOnFirst4KBOnly(t *testing.T) {
 	// First 4096 bytes identical, tail differs → fingerprint should match.
-	head := bytes(4096, 'a')
-	a := writeModelFile(t, append(append([]byte(nil), head...), bytes(1024, 'b')...))
-	b := writeModelFile(t, append(append([]byte(nil), head...), bytes(1024, 'c')...))
+	head := fillBytes(4096, 'a')
+	a := writeModelFile(t, append(append([]byte(nil), head...), fillBytes(1024, 'b')...))
+	b := writeModelFile(t, append(append([]byte(nil), head...), fillBytes(1024, 'c')...))
 	fpA, err := Fingerprint(a)
 	if err != nil {
 		t.Fatal(err)
@@ -54,8 +54,8 @@ func TestFingerprint_DependsOnFirst4KBOnly(t *testing.T) {
 }
 
 func TestFingerprint_DiffersOnFirst4KBChange(t *testing.T) {
-	a := writeModelFile(t, bytes(4096, 'a'))
-	b := writeModelFile(t, bytes(4096, 'b'))
+	a := writeModelFile(t, fillBytes(4096, 'a'))
+	b := writeModelFile(t, fillBytes(4096, 'b'))
 	fpA, _ := Fingerprint(a)
 	fpB, _ := Fingerprint(b)
 	if fpA == fpB {
@@ -65,7 +65,7 @@ func TestFingerprint_DiffersOnFirst4KBChange(t *testing.T) {
 
 func TestFingerprint_FileShorterThan4KB(t *testing.T) {
 	// 1KB file: hash whatever is there; do not error.
-	path := writeModelFile(t, bytes(1024, 'a'))
+	path := writeModelFile(t, fillBytes(1024, 'a'))
 	fp, err := Fingerprint(path)
 	if err != nil {
 		t.Fatalf("Fingerprint: %v", err)
@@ -207,8 +207,8 @@ func TestResult_JSONShape(t *testing.T) {
 	}
 }
 
-// bytes returns a slice of length n filled with c.
-func bytes(n int, c byte) []byte {
+// fillBytes returns a slice of length n filled with c.
+func fillBytes(n int, c byte) []byte {
 	b := make([]byte, n)
 	for i := range b {
 		b[i] = c
