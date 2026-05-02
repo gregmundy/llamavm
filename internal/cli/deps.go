@@ -8,6 +8,8 @@ import (
 	"errors"
 	"io"
 	"time"
+
+	"github.com/gregmundy/llamavm/internal/bench"
 )
 
 // ErrUserError marks errors caused by user input (version not installed, version
@@ -28,6 +30,7 @@ type Store interface {
 	RemoveStaging(tag string) error
 	LogsDir() string
 	ShimsDir() string
+	BenchmarksDir() string
 }
 
 // GitHubClient resolves and validates llama.cpp release tags.
@@ -65,6 +68,12 @@ type ShimInstaller interface {
 	EnsureInstalled(shimsDir string) error
 }
 
+// Benchmarker runs a single bench against a model. Implementations honor
+// useCache by returning a cached Result without executing when one exists.
+type Benchmarker interface {
+	Run(ctx context.Context, tag, modelPath string, useCache bool) (bench.Result, error)
+}
+
 // Deps collects everything the cli subcommands need.
 type Deps struct {
 	Store         Store
@@ -74,6 +83,7 @@ type Deps struct {
 	Platform      Platform
 	Resolver      Resolver
 	ShimInstaller ShimInstaller
+	Benchmarker   Benchmarker
 	Stdout        io.Writer
 	Stderr        io.Writer
 	Now           func() time.Time

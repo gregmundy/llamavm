@@ -117,6 +117,10 @@ func (s *realPathStore) ShimsDir() string {
 	return filepath.Join(s.root, "shims")
 }
 
+func (s *realPathStore) BenchmarksDir() string {
+	return filepath.Join(s.root, "benchmarks")
+}
+
 func newInstallDeps(t *testing.T, store Store) (*Deps, *fakeGitHub, *fakeBuilder, *fakeCmdRunner, *fakeShimInstaller) {
 	t.Helper()
 	g := &fakeGitHub{latest: "b5489"}

@@ -23,5 +23,6 @@ func NewRoot(deps *Deps, llamavmVersion string) *cobra.Command {
 	root.AddCommand(newCurrentCmd(deps))
 	root.AddCommand(newUseCmd(deps))
 	root.AddCommand(newPinCmd(deps))
+	root.AddCommand(newBenchCmd(deps))
 	return root
 }

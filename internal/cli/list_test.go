@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gregmundy/llamavm/internal/bench"
 	"github.com/gregmundy/llamavm/internal/version"
 )
 
@@ -24,6 +25,7 @@ type fakeStore struct {
 	stagingDirFn  func(string) string
 	logsDir       string
 	shimsDir      string
+	benchmarksDir string
 	promoteErr    error
 	removeStagErr error
 }
@@ -100,6 +102,12 @@ func (s *fakeStore) ShimsDir() string {
 	}
 	return "/fake/shims"
 }
+func (s *fakeStore) BenchmarksDir() string {
+	if s.benchmarksDir != "" {
+		return s.benchmarksDir
+	}
+	return "/fake/benchmarks"
+}
 
 // fakeResolver implements Resolver. lastCwd records what Resolve was called
 // with so tests can assert that subcommands threaded cwd through correctly.
@@ -123,6 +131,34 @@ type fakeShimInstaller struct {
 func (i *fakeShimInstaller) EnsureInstalled(shimsDir string) error {
 	i.calls = append(i.calls, shimsDir)
 	return i.err
+}
+
+// fakeBenchmarker implements Benchmarker. Records each call's args; returns
+// the next result from results in order, or err if non-nil.
+type fakeBenchmarker struct {
+	results []bench.Result
+	errs    []error
+	calls   []struct {
+		tag      string
+		model    string
+		useCache bool
+	}
+}
+
+func (b *fakeBenchmarker) Run(_ context.Context, tag, model string, useCache bool) (bench.Result, error) {
+	idx := len(b.calls)
+	b.calls = append(b.calls, struct {
+		tag      string
+		model    string
+		useCache bool
+	}{tag, model, useCache})
+	if idx < len(b.errs) && b.errs[idx] != nil {
+		return bench.Result{}, b.errs[idx]
+	}
+	if idx < len(b.results) {
+		return b.results[idx], nil
+	}
+	return bench.Result{Version: tag}, nil
 }
 
 func runRoot(t *testing.T, deps *Deps, args ...string) (stdout, stderr string, err error) {
