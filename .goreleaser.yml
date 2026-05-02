@@ -63,5 +63,14 @@ brews:
     install: |
       bin.install "llamavm"
       bin.install "llamavm-shim"
+    caveats: |
+      llamavm needs its shims directory on PATH. Add this to your shell rc:
+
+        export PATH="$HOME/.llamavm/shims:$PATH"
+
+      Then install a llama.cpp version:
+
+        llamavm install latest
+        llamavm doctor
     test: |
       assert_match "llamavm version", shell_output("#{bin}/llamavm --version")
