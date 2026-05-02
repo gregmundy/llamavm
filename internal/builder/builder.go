@@ -1,3 +1,5 @@
+// Package builder runs the cmake configure + build sequence and exposes the
+// host-platform facts the install flow uses to pass -j N to cmake.
 package builder
 
 import (

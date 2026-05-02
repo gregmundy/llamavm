@@ -5,9 +5,14 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
 )
+
+// ErrUserError marks errors caused by user input (version not installed, version
+// not found upstream, etc.). main.go translates these to PRD §6.4 exit code 2.
+var ErrUserError = errors.New("user error")
 
 // Store is the version store contract used by the cli package.
 type Store interface {

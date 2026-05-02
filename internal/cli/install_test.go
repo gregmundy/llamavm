@@ -314,6 +314,31 @@ func TestInstall_GitFailureIsAtomic(t *testing.T) {
 	}
 }
 
+func TestInstall_TagNotFound_IsUserError(t *testing.T) {
+	store := newRealPathStore(t)
+	deps, g, _, _ := newInstallDeps(t, store)
+	g.tagErr = gh.ErrTagNotFound
+	_, _, err := runRoot(t, deps, "install", "b9999")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ErrUserError) {
+		t.Fatalf("err = %v, want it to chain to ErrUserError", err)
+	}
+}
+
+func TestInstall_InvalidTagShape(t *testing.T) {
+	store := newRealPathStore(t)
+	deps, _, _, _ := newInstallDeps(t, store)
+	_, _, err := runRoot(t, deps, "install", "../etc/passwd")
+	if err == nil {
+		t.Fatal("expected error on invalid tag")
+	}
+	if !errors.Is(err, ErrUserError) {
+		t.Fatalf("err = %v, want it to chain to ErrUserError", err)
+	}
+}
+
 func contains(slice []string, want string) bool {
 	for _, s := range slice {
 		if s == want {

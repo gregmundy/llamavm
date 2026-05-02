@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -58,5 +59,16 @@ func TestUninstall_KeepsActiveIfDifferent(t *testing.T) {
 	}
 	if store.clearActive {
 		t.Fatal("expected active untouched when removing a non-active version")
+	}
+}
+
+func TestUninstall_NotInstalled_IsUserError(t *testing.T) {
+	deps := &Deps{Store: &fakeStore{}}
+	_, _, err := runRoot(t, deps, "uninstall", "b5046")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ErrUserError) {
+		t.Fatalf("err = %v, want it to chain to ErrUserError", err)
 	}
 }

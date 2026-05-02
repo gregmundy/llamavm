@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -19,6 +20,7 @@ import (
 const llamaCppRepoURL = "https://github.com/ggml-org/llama.cpp.git"
 
 var binaryNames = []string{"llama-cli", "llama-server", "llama-quantize"}
+var validTagRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 func newInstallCmd(deps *Deps) *cobra.Command {
 	return &cobra.Command{
@@ -41,6 +43,10 @@ func runInstall(ctx context.Context, deps *Deps, requested string) error {
 		tag = resolved
 	}
 
+	if !validTagRe.MatchString(tag) {
+		return fmt.Errorf("invalid version format %q: %w", tag, ErrUserError)
+	}
+
 	if deps.Store.IsInstalled(tag) {
 		fmt.Fprintf(deps.Stdout, "%s is already installed\n", tag)
 		return nil
@@ -48,13 +54,13 @@ func runInstall(ctx context.Context, deps *Deps, requested string) error {
 
 	if err := deps.GitHub.TagExists(ctx, tag); err != nil {
 		if errors.Is(err, gh.ErrTagNotFound) {
-			return fmt.Errorf("version %s not found upstream", tag)
+			return fmt.Errorf("version %s not found upstream: %w", tag, ErrUserError)
 		}
 		return fmt.Errorf("validate %s: %w", tag, err)
 	}
 
 	if !deps.Platform.IsAppleSilicon() {
-		return fmt.Errorf("llamavm v1 requires Apple Silicon (darwin/arm64)")
+		return fmt.Errorf("llamavm v1 requires Apple Silicon (darwin/arm64): %w", ErrUserError)
 	}
 
 	staging := deps.Store.StagingDir(tag)

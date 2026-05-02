@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"time"
 )
@@ -61,7 +62,7 @@ func (c *Client) Latest(ctx context.Context) (string, error) {
 // ErrRateLimited when GitHub reports the request as rate-limited, or another
 // error for other failures.
 func (c *Client) TagExists(ctx context.Context, tag string) error {
-	url := fmt.Sprintf("%s/repos/ggml-org/llama.cpp/releases/tags/%s", c.BaseURL, tag)
+	url := c.BaseURL + "/repos/ggml-org/llama.cpp/releases/tags/" + neturl.PathEscape(tag)
 	_, err := c.get(ctx, url)
 	return err
 }

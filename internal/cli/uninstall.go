@@ -22,11 +22,11 @@ func newUninstallCmd(deps *Deps) *cobra.Command {
 
 func runUninstall(deps *Deps, tag string) error {
 	if !deps.Store.IsInstalled(tag) {
-		return fmt.Errorf("%s is not installed", tag)
+		return fmt.Errorf("%s is not installed: %w", tag, ErrUserError)
 	}
 	if err := deps.Store.Remove(tag); err != nil {
 		if errors.Is(err, version.ErrNotInstalled) {
-			return fmt.Errorf("%s is not installed", tag)
+			return fmt.Errorf("%s is not installed: %w", tag, ErrUserError)
 		}
 		return fmt.Errorf("remove %s: %w", tag, err)
 	}

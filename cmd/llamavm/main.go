@@ -45,12 +45,8 @@ func main() {
 	defer cancel()
 
 	if err := root.ExecuteContext(ctx); err != nil {
-		// Cobra already prints the error via SilenceUsage=false default; we still
-		// translate to PRD §6.4 exit codes.
-		var notInstalled interface {
-			Is(error) bool
-		}
-		if errors.Is(err, version.ErrNotInstalled) || errors.As(err, &notInstalled) {
+		// Cobra prints the error itself; we translate to PRD §6.4 exit codes.
+		if errors.Is(err, cli.ErrUserError) {
 			os.Exit(2)
 		}
 		os.Exit(1)
