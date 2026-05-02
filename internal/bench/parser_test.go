@@ -107,3 +107,32 @@ func TestParse_PrefersTokensPerSecOverComputedWhenBothAvailable(t *testing.T) {
 		t.Fatalf("TokensPerSec = %v, want exactly 44.72 (parsed inline)", got.TokensPerSec)
 	}
 }
+
+func TestParse_TolersExtraMetricInsideParens(t *testing.T) {
+	// If a future llama.cpp build adds another metric inside the parens
+	// (e.g. GFLOP/s) before "tokens per second", the inline value should
+	// still be used — not silently discarded in favour of the computed
+	// 1000/ms_per_token fallback. The fixture below differs from modernStderr
+	// only by inserting "1.50 GFLOP/s," between the two existing metrics.
+	stderr := strings.Replace(modernStderr,
+		"22.36 ms per token,    44.72 tokens per second",
+		"22.36 ms per token,    1.50 GFLOP/s,    44.72 tokens per second",
+		1)
+	got, err := Parse(stderr)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got.TokensPerSec < 44.72-0.005 || got.TokensPerSec > 44.72+0.005 {
+		t.Fatalf("TokensPerSec = %v, want 44.72 (inline value, not computed)", got.TokensPerSec)
+	}
+}
+
+func TestParse_SingleRunNoTrailingS(t *testing.T) {
+	// Lock in the regex's `runs?` permissiveness so a future tightening
+	// doesn't break a 1-run benchmark output.
+	stderr := strings.Replace(modernStderr,
+		"7423.47 ms /   332 runs", "7423.47 ms /   1 run", 1)
+	if _, err := Parse(stderr); err != nil {
+		t.Fatalf("Parse('1 run'): %v", err)
+	}
+}
