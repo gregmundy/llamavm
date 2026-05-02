@@ -27,6 +27,7 @@ type Store interface {
 	PromoteStaging(tag string) error
 	RemoveStaging(tag string) error
 	LogsDir() string
+	ShimsDir() string
 }
 
 // GitHubClient resolves and validates llama.cpp release tags.
@@ -50,14 +51,28 @@ type Platform interface {
 	IsAppleSilicon() bool
 }
 
+// Resolver returns the active tag or version.ErrNoActiveVersion.
+type Resolver interface {
+	Resolve() (string, error)
+}
+
+// ShimInstaller writes the three shim binaries into the shims directory.
+// Implementations must be idempotent: calling EnsureInstalled twice with
+// the same shimsDir is a no-op the second time.
+type ShimInstaller interface {
+	EnsureInstalled(shimsDir string) error
+}
+
 // Deps collects everything the cli subcommands need.
 type Deps struct {
-	Store    Store
-	GitHub   GitHubClient
-	Builder  Builder
-	Git      CommandRunner
-	Platform Platform
-	Stdout   io.Writer
-	Stderr   io.Writer
-	Now      func() time.Time
+	Store         Store
+	GitHub        GitHubClient
+	Builder       Builder
+	Git           CommandRunner
+	Platform      Platform
+	Resolver      Resolver
+	ShimInstaller ShimInstaller
+	Stdout        io.Writer
+	Stderr        io.Writer
+	Now           func() time.Time
 }

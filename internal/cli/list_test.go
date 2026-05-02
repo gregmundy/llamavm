@@ -23,6 +23,7 @@ type fakeStore struct {
 	versionDirFn  func(string) string
 	stagingDirFn  func(string) string
 	logsDir       string
+	shimsDir      string
 	promoteErr    error
 	removeStagErr error
 }
@@ -92,6 +93,31 @@ func (s *fakeStore) LogsDir() string {
 		return s.logsDir
 	}
 	return "/fake/logs"
+}
+func (s *fakeStore) ShimsDir() string {
+	if s.shimsDir != "" {
+		return s.shimsDir
+	}
+	return "/fake/shims"
+}
+
+// fakeResolver implements Resolver.
+type fakeResolver struct {
+	tag string
+	err error
+}
+
+func (r *fakeResolver) Resolve() (string, error) { return r.tag, r.err }
+
+// fakeShimInstaller implements ShimInstaller; records each call.
+type fakeShimInstaller struct {
+	calls []string
+	err   error
+}
+
+func (i *fakeShimInstaller) EnsureInstalled(shimsDir string) error {
+	i.calls = append(i.calls, shimsDir)
+	return i.err
 }
 
 func runRoot(t *testing.T, deps *Deps, args ...string) (stdout, stderr string, err error) {
