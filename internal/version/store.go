@@ -27,10 +27,10 @@ func New(home string) *Store {
 	return &Store{home: home}
 }
 
-func (s *Store) Root() string         { return filepath.Join(s.home, ".llamavm") }
-func (s *Store) VersionsDir() string  { return filepath.Join(s.Root(), "versions") }
-func (s *Store) LogsDir() string      { return filepath.Join(s.Root(), "logs") }
-func (s *Store) CurrentFile() string  { return filepath.Join(s.Root(), "current") }
+func (s *Store) Root() string        { return filepath.Join(s.home, ".llamavm") }
+func (s *Store) VersionsDir() string { return filepath.Join(s.Root(), "versions") }
+func (s *Store) LogsDir() string     { return filepath.Join(s.Root(), "logs") }
+func (s *Store) CurrentFile() string { return filepath.Join(s.Root(), "current") }
 
 // VersionDir is the final install directory for a tag.
 func (s *Store) VersionDir(tag string) string {
@@ -72,7 +72,7 @@ func (s *Store) List() ([]string, error) {
 	return out, nil
 }
 
-// Active returns the tag in ~/.llamavm/current. Trailing whitespace is trimmed.
+// Active returns the tag in ~/.llamavm/current. Surrounding whitespace is trimmed.
 // Returns ErrNoActiveVersion when the file is missing or empty.
 func (s *Store) Active() (string, error) {
 	b, err := os.ReadFile(s.CurrentFile())
@@ -148,9 +148,8 @@ func (s *Store) PromoteStaging(tag string) error {
 
 // RemoveStaging deletes the staging directory. Missing dir is not an error.
 func (s *Store) RemoveStaging(tag string) error {
-	err := os.RemoveAll(s.StagingDir(tag))
-	if err == nil {
-		return nil
+	if err := os.RemoveAll(s.StagingDir(tag)); err != nil {
+		return fmt.Errorf("remove staging: %w", err)
 	}
-	return fmt.Errorf("remove staging: %w", err)
+	return nil
 }
