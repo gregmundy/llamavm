@@ -43,7 +43,7 @@ func main() {
 	platform := builder.DefaultPlatform
 	store := version.New(home)
 	runner := builder.ExecRunner{}
-	resolver := version.NewResolver(store)
+	resolver := version.NewResolver(store, home)
 	installer := &shim.Installer{Source: defaultShimSource}
 
 	deps := &cli.Deps{
@@ -57,6 +57,7 @@ func main() {
 		Stdout:        os.Stdout,
 		Stderr:        os.Stderr,
 		Now:           time.Now,
+		Getwd:         os.Getwd,
 	}
 
 	root := cli.NewRoot(deps, llamavmVersion)
