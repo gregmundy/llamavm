@@ -1,0 +1,18 @@
+# Build output
+/llamavm
+/llamavm-shim
+/dist/
+/build/
+
+# Test artifacts
+*.test
+*.out
+coverage.txt
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/
+
+# Claude Code per-machine settings
+.claude/settings.local.json
