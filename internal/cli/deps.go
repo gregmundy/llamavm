@@ -51,9 +51,11 @@ type Platform interface {
 	IsAppleSilicon() bool
 }
 
-// Resolver returns the active tag or version.ErrNoActiveVersion.
+// Resolver returns the active tag for the given working directory or
+// version.ErrNoActiveVersion. Pass "" when no cwd is available — the
+// resolver will then consult only ~/.llamavm/current.
 type Resolver interface {
-	Resolve() (string, error)
+	Resolve(cwd string) (string, error)
 }
 
 // ShimInstaller writes the three shim binaries into the shims directory.
@@ -75,4 +77,5 @@ type Deps struct {
 	Stdout        io.Writer
 	Stderr        io.Writer
 	Now           func() time.Time
+	Getwd         func() (string, error)
 }

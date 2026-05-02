@@ -101,13 +101,18 @@ func (s *fakeStore) ShimsDir() string {
 	return "/fake/shims"
 }
 
-// fakeResolver implements Resolver.
+// fakeResolver implements Resolver. lastCwd records what Resolve was called
+// with so tests can assert that subcommands threaded cwd through correctly.
 type fakeResolver struct {
-	tag string
-	err error
+	tag     string
+	err     error
+	lastCwd string
 }
 
-func (r *fakeResolver) Resolve() (string, error) { return r.tag, r.err }
+func (r *fakeResolver) Resolve(cwd string) (string, error) {
+	r.lastCwd = cwd
+	return r.tag, r.err
+}
 
 // fakeShimInstaller implements ShimInstaller; records each call.
 type fakeShimInstaller struct {
