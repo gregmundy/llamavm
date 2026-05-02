@@ -113,7 +113,11 @@ func (s *realPathStore) RemoveStaging(tag string) error {
 	return os.RemoveAll(filepath.Join(s.root, "versions", ".staging-"+tag))
 }
 
-func newInstallDeps(t *testing.T, store Store) (*Deps, *fakeGitHub, *fakeBuilder, *fakeCmdRunner) {
+func (s *realPathStore) ShimsDir() string {
+	return filepath.Join(s.root, "shims")
+}
+
+func newInstallDeps(t *testing.T, store Store) (*Deps, *fakeGitHub, *fakeBuilder, *fakeCmdRunner, *fakeShimInstaller) {
 	t.Helper()
 	g := &fakeGitHub{latest: "b5489"}
 	b := &fakeBuilder{}
@@ -132,19 +136,21 @@ func newInstallDeps(t *testing.T, store Store) (*Deps, *fakeGitHub, *fakeBuilder
 		}
 		return nil
 	}}
+	si := &fakeShimInstaller{}
 	deps := &Deps{
-		Store:    store,
-		GitHub:   g,
-		Builder:  b,
-		Git:      r,
-		Platform: fakePlatform{apple: true},
-		Now:      func() time.Time { return time.Date(2026, 5, 2, 14, 30, 30, 0, time.UTC) },
+		Store:         store,
+		GitHub:        g,
+		Builder:       b,
+		Git:           r,
+		Platform:      fakePlatform{apple: true},
+		ShimInstaller: si,
+		Now:           func() time.Time { return time.Date(2026, 5, 2, 14, 30, 30, 0, time.UTC) },
 	}
-	return deps, g, b, r
+	return deps, g, b, r, si
 }
 
 func TestInstall_RequiresVersion(t *testing.T) {
-	deps, _, _, _ := newInstallDeps(t, &fakeStore{})
+	deps, _, _, _, _ := newInstallDeps(t, &fakeStore{})
 	if _, _, err := runRoot(t, deps, "install"); err == nil {
 		t.Fatal("expected error when version arg missing")
 	}
@@ -152,7 +158,7 @@ func TestInstall_RequiresVersion(t *testing.T) {
 
 func TestInstall_RefusesNonAppleSilicon(t *testing.T) {
 	store := newRealPathStore(t)
-	deps, _, _, _ := newInstallDeps(t, store)
+	deps, _, _, _, _ := newInstallDeps(t, store)
 	deps.Platform = fakePlatform{apple: false}
 	_, _, err := runRoot(t, deps, "install", "b5046")
 	if err == nil || !strings.Contains(err.Error(), "Apple Silicon") {
@@ -162,7 +168,7 @@ func TestInstall_RefusesNonAppleSilicon(t *testing.T) {
 
 func TestInstall_AlreadyInstalledIsIdempotent(t *testing.T) {
 	store := newRealPathStore(t, "b5046")
-	deps, g, b, r := newInstallDeps(t, store)
+	deps, g, b, r, _ := newInstallDeps(t, store)
 	out, _, err := runRoot(t, deps, "install", "b5046")
 	if err != nil {
 		t.Fatalf("install: %v", err)
@@ -178,7 +184,7 @@ func TestInstall_AlreadyInstalledIsIdempotent(t *testing.T) {
 
 func TestInstall_LatestResolvesViaGitHub(t *testing.T) {
 	store := newRealPathStore(t)
-	deps, g, _, r := newInstallDeps(t, store)
+	deps, g, _, r, _ := newInstallDeps(t, store)
 	g.latest = "b5489"
 	if _, _, err := runRoot(t, deps, "install", "latest"); err != nil {
 		t.Fatalf("install latest: %v", err)
@@ -198,7 +204,7 @@ func TestInstall_LatestResolvesViaGitHub(t *testing.T) {
 
 func TestInstall_TagNotFound(t *testing.T) {
 	store := newRealPathStore(t)
-	deps, g, _, _ := newInstallDeps(t, store)
+	deps, g, _, _, _ := newInstallDeps(t, store)
 	g.tagErr = gh.ErrTagNotFound
 	_, _, err := runRoot(t, deps, "install", "b9999")
 	if err == nil || !strings.Contains(err.Error(), "not found") {
@@ -208,7 +214,7 @@ func TestInstall_TagNotFound(t *testing.T) {
 
 func TestInstall_HappyPath(t *testing.T) {
 	store := newRealPathStore(t)
-	deps, _, b, r := newInstallDeps(t, store)
+	deps, _, b, r, _ := newInstallDeps(t, store)
 	out, _, err := runRoot(t, deps, "install", "b5046")
 	if err != nil {
 		t.Fatalf("install: %v", err)
@@ -249,13 +255,40 @@ func TestInstall_HappyPath(t *testing.T) {
 	}
 }
 
+func TestInstall_HappyPathInstallsShimsOnce(t *testing.T) {
+	store := newRealPathStore(t)
+	deps, _, _, _, si := newInstallDeps(t, store)
+	if _, _, err := runRoot(t, deps, "install", "b5046"); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if len(si.calls) != 1 {
+		t.Fatalf("ShimInstaller calls = %d, want 1", len(si.calls))
+	}
+	if !strings.HasSuffix(si.calls[0], "shims") {
+		t.Fatalf("ShimInstaller called with %q, want a shims dir", si.calls[0])
+	}
+}
+
+func TestInstall_FailureSkipsShimInstall(t *testing.T) {
+	store := newRealPathStore(t)
+	deps, _, b, _, si := newInstallDeps(t, store)
+	b.err = errors.New("cmake exited 1")
+	_, _, err := runRoot(t, deps, "install", "b5046")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if len(si.calls) != 0 {
+		t.Fatalf("ShimInstaller called %d times on failed install, want 0", len(si.calls))
+	}
+}
+
 func TestInstall_KeepsActiveOnSecondInstall(t *testing.T) {
 	store := newRealPathStore(t)
 	if err := store.SetActive("b5046"); err != nil {
 		t.Fatal(err)
 	}
 	store.installed = append(store.installed, "b5046")
-	deps, _, _, _ := newInstallDeps(t, store)
+	deps, _, _, _, _ := newInstallDeps(t, store)
 	if _, _, err := runRoot(t, deps, "install", "b5489"); err != nil {
 		t.Fatalf("install: %v", err)
 	}
@@ -267,7 +300,7 @@ func TestInstall_KeepsActiveOnSecondInstall(t *testing.T) {
 
 func TestInstall_BuildFailureIsAtomic(t *testing.T) {
 	store := newRealPathStore(t)
-	deps, _, b, _ := newInstallDeps(t, store)
+	deps, _, b, _, _ := newInstallDeps(t, store)
 	b.err = errors.New("cmake exited 1")
 	b.logOut = "metal not found\n"
 
@@ -298,7 +331,7 @@ func TestInstall_BuildFailureIsAtomic(t *testing.T) {
 
 func TestInstall_GitFailureIsAtomic(t *testing.T) {
 	store := newRealPathStore(t)
-	deps, _, _, r := newInstallDeps(t, store)
+	deps, _, _, r, _ := newInstallDeps(t, store)
 	r.cloneFn = func(args []string, dir string) error { return errors.New("clone refused") }
 
 	_, _, err := runRoot(t, deps, "install", "b5046")
@@ -316,7 +349,7 @@ func TestInstall_GitFailureIsAtomic(t *testing.T) {
 
 func TestInstall_TagNotFound_IsUserError(t *testing.T) {
 	store := newRealPathStore(t)
-	deps, g, _, _ := newInstallDeps(t, store)
+	deps, g, _, _, _ := newInstallDeps(t, store)
 	g.tagErr = gh.ErrTagNotFound
 	_, _, err := runRoot(t, deps, "install", "b9999")
 	if err == nil {
@@ -329,7 +362,7 @@ func TestInstall_TagNotFound_IsUserError(t *testing.T) {
 
 func TestInstall_InvalidTagShape(t *testing.T) {
 	store := newRealPathStore(t)
-	deps, _, _, _ := newInstallDeps(t, store)
+	deps, _, _, _, _ := newInstallDeps(t, store)
 	_, _, err := runRoot(t, deps, "install", "../etc/passwd")
 	if err == nil {
 		t.Fatal("expected error on invalid tag")

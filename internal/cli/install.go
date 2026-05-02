@@ -104,6 +104,10 @@ func runInstall(ctx context.Context, deps *Deps, requested string) error {
 		return cleanup("promote staging", err)
 	}
 
+	if err := deps.ShimInstaller.EnsureInstalled(deps.Store.ShimsDir()); err != nil {
+		return fmt.Errorf("install shims: %w", err)
+	}
+
 	// Set active if no active version is set.
 	if _, err := deps.Store.Active(); errors.Is(err, version.ErrNoActiveVersion) {
 		if err := deps.Store.SetActive(tag); err != nil {
