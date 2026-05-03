@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"text/tabwriter"
 
@@ -12,13 +13,23 @@ import (
 	"github.com/gregmundy/llamavm/internal/bench"
 )
 
+// noiseThresholdPct is the absolute percentage delta below which a
+// version's perf is considered indistinguishable from the current version.
+// Within this band, the bench output reads "≈ current" instead of a small
+// signed number that would imply meaningful difference.
+const noiseThresholdPct = 0.5
+
 func newBenchCmd(deps *Deps) *cobra.Command {
 	var modelPath string
 	var noCache bool
 	cmd := &cobra.Command{
 		Use:   "bench <version|all>",
 		Short: "Benchmark an installed llama.cpp version against a model",
-		Args:  cobra.ExactArgs(1),
+		Long: "Benchmark an installed llama.cpp version against a model.\n\n" +
+			"Differences below 0.5% are reported as within measurement noise " +
+			"(\"≈ current\") rather than a small signed delta — single-run " +
+			"benchmarks can't distinguish that signal from run-to-run jitter.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if args[0] == "all" {
 				return runBenchAll(cmd.Context(), deps, modelPath, !noCache)
@@ -111,11 +122,18 @@ func runBenchAll(ctx context.Context, deps *Deps, modelPath string, useCache boo
 				status = "current"
 			case baseline > 0:
 				delta := (r.res.TokensPerSec - baseline) / baseline * 100
-				sign := "+"
-				if delta < 0 {
-					sign = ""
+				if math.Abs(delta) < noiseThresholdPct {
+					// Indistinguishable from the current version given a single
+					// llama-bench run; suppress the small number so the user
+					// doesn't read it as meaningful.
+					status = "≈ current"
+				} else {
+					sign := "+"
+					if delta < 0 {
+						sign = ""
+					}
+					status = fmt.Sprintf("%s%.1f%% vs current", sign, delta)
 				}
-				status = fmt.Sprintf("%s%.1f%% vs current", sign, delta)
 			}
 		}
 		fmt.Fprintln(tw, strings.Join([]string{r.tag, tps, tt, status}, "\t"))
@@ -126,6 +144,17 @@ func runBenchAll(ctx context.Context, deps *Deps, modelPath string, useCache boo
 	}
 	tw.Flush()
 	if bestSet {
+		// If the "best" tag is within the noise threshold of current, it
+		// isn't meaningfully better — say so plainly rather than crowning a
+		// non-winner. When no current version is set (baseline==0), fall
+		// through to the standard form.
+		if baseline > 0 && best.tag != active {
+			delta := (best.res.TokensPerSec - baseline) / baseline * 100
+			if math.Abs(delta) < noiseThresholdPct {
+				fmt.Fprintln(deps.Stdout, "\nBest: current (within noise)")
+				return nil
+			}
+		}
 		fmt.Fprintf(deps.Stdout, "\nBest: %s (%.1f t/s)\n", best.tag, best.res.TokensPerSec)
 	}
 	return nil

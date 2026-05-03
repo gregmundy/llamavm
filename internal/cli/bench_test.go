@@ -267,3 +267,114 @@ func TestBenchAll_NoActiveVersion_NoCurrentMarker(t *testing.T) {
 		t.Fatalf("with no active version, table should NOT contain 'vs current'; out=\n%s", out)
 	}
 }
+
+func TestBenchAll_WithinNoiseShowsApproxCurrent(t *testing.T) {
+	// b9009 vs active b9010: 36.1 vs 36.0 = +0.28% — under the 0.5%
+	// noise threshold. Status should read "≈ current", not "+0.3% vs current".
+	bm := &fakeBenchmarker{
+		results: []bench.Result{
+			{Version: "b9009", TokensPerSec: 36.1, TotalTimeSeconds: 5.1},
+			{Version: "b9010", TokensPerSec: 36.0, TotalTimeSeconds: 5.1},
+		},
+	}
+	deps := &Deps{
+		Store: &fakeStore{
+			installed: []string{"b9009", "b9010"},
+			active:    "b9010",
+			hasActive: true,
+		},
+		Benchmarker: bm,
+	}
+	out, _, err := runRoot(t, deps, "bench", "all", "--model", "/x/y.gguf")
+	if err != nil {
+		t.Fatalf("bench all: %v", err)
+	}
+	if !strings.Contains(out, "≈ current") {
+		t.Fatalf("expected '≈ current' in within-noise comparison; out=\n%s", out)
+	}
+	// And the misleading +0.3% line should NOT appear.
+	if strings.Contains(out, "+0.3%") || strings.Contains(out, "0.3% vs current") {
+		t.Fatalf("within-noise rows should not show a small percentage; out=\n%s", out)
+	}
+}
+
+func TestBenchAll_BeyondNoiseShowsPercentage(t *testing.T) {
+	// 5% delta is well above noise — keep the existing percentage display.
+	bm := &fakeBenchmarker{
+		results: []bench.Result{
+			{Version: "b9009", TokensPerSec: 38.0, TotalTimeSeconds: 5.0},
+			{Version: "b9010", TokensPerSec: 36.0, TotalTimeSeconds: 5.1},
+		},
+	}
+	deps := &Deps{
+		Store: &fakeStore{
+			installed: []string{"b9009", "b9010"},
+			active:    "b9010",
+			hasActive: true,
+		},
+		Benchmarker: bm,
+	}
+	out, _, err := runRoot(t, deps, "bench", "all", "--model", "/x/y.gguf")
+	if err != nil {
+		t.Fatalf("bench all: %v", err)
+	}
+	if !strings.Contains(out, "+5.6% vs current") {
+		t.Fatalf("expected '+5.6%% vs current'; out=\n%s", out)
+	}
+}
+
+func TestBenchAll_BestWithinNoiseSaysCurrent(t *testing.T) {
+	// Best is b9009 (36.1) but within 0.5% of active b9010 (36.0) — Best line
+	// should not crown a non-winner.
+	bm := &fakeBenchmarker{
+		results: []bench.Result{
+			{Version: "b9009", TokensPerSec: 36.1, TotalTimeSeconds: 5.1},
+			{Version: "b9010", TokensPerSec: 36.0, TotalTimeSeconds: 5.1},
+		},
+	}
+	deps := &Deps{
+		Store: &fakeStore{
+			installed: []string{"b9009", "b9010"},
+			active:    "b9010",
+			hasActive: true,
+		},
+		Benchmarker: bm,
+	}
+	out, _, err := runRoot(t, deps, "bench", "all", "--model", "/x/y.gguf")
+	if err != nil {
+		t.Fatalf("bench all: %v", err)
+	}
+	if !strings.Contains(out, "Best: current (within noise)") {
+		t.Fatalf("expected 'Best: current (within noise)'; out=\n%s", out)
+	}
+	// And the older "Best: b9009 (...)" line should NOT appear.
+	if strings.Contains(out, "Best: b9009") {
+		t.Fatalf("Best line should not crown b9009 when it's within noise of current; out=\n%s", out)
+	}
+}
+
+func TestBenchAll_BestBeyondNoiseShowsTag(t *testing.T) {
+	// b9009 at 38.0 vs current b9010 at 36.0 → +5.6%, well above noise.
+	// Best line keeps the existing form.
+	bm := &fakeBenchmarker{
+		results: []bench.Result{
+			{Version: "b9009", TokensPerSec: 38.0, TotalTimeSeconds: 5.0},
+			{Version: "b9010", TokensPerSec: 36.0, TotalTimeSeconds: 5.1},
+		},
+	}
+	deps := &Deps{
+		Store: &fakeStore{
+			installed: []string{"b9009", "b9010"},
+			active:    "b9010",
+			hasActive: true,
+		},
+		Benchmarker: bm,
+	}
+	out, _, err := runRoot(t, deps, "bench", "all", "--model", "/x/y.gguf")
+	if err != nil {
+		t.Fatalf("bench all: %v", err)
+	}
+	if !strings.Contains(out, "Best: b9009 (38.0 t/s)") {
+		t.Fatalf("expected 'Best: b9009 (38.0 t/s)'; out=\n%s", out)
+	}
+}
