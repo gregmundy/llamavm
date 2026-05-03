@@ -37,6 +37,10 @@ type Store interface {
 type GitHubClient interface {
 	Latest(ctx context.Context) (string, error)
 	TagExists(ctx context.Context, tag string) error
+	// ListReleases returns release tags newest-first. limit is the cap when
+	// all is false; when all is true the implementation paginates until
+	// GitHub returns a short page.
+	ListReleases(ctx context.Context, limit int, all bool) ([]string, error)
 }
 
 // Builder runs the cmake configure + build sequence in a source tree.

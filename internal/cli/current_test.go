@@ -41,8 +41,8 @@ func TestCurrent_NoActiveVersion(t *testing.T) {
 		t.Fatalf("err = %v, want chained ErrUserError", err)
 	}
 	combined := errOut + err.Error()
-	if !strings.Contains(combined, "No active version") {
-		t.Fatalf("output = %q, want it to mention 'No active version'", combined)
+	if !strings.Contains(combined, "no active version") {
+		t.Fatalf("output = %q, want it to mention 'no active version'", combined)
 	}
 }
 

@@ -58,6 +58,43 @@ func (c *Client) Latest(ctx context.Context) (string, error) {
 	return r.TagName, nil
 }
 
+// ListReleases returns release tags newest-first. When all is true the
+// limit is ignored and the client paginates until GitHub returns a short
+// page (signalling end-of-list). When all is false the request fetches a
+// single page sized to the limit so we don't waste bandwidth on entries
+// the caller will discard.
+func (c *Client) ListReleases(ctx context.Context, limit int, all bool) ([]string, error) {
+	const maxPerPage = 100
+	perPage := maxPerPage
+	if !all && limit < perPage {
+		perPage = limit
+	}
+	var tags []string
+	for page := 1; ; page++ {
+		url := fmt.Sprintf("%s/repos/ggml-org/llama.cpp/releases?per_page=%d&page=%d",
+			c.BaseURL, perPage, page)
+		body, err := c.get(ctx, url)
+		if err != nil {
+			return nil, err
+		}
+		var rels []release
+		if err := json.Unmarshal(body, &rels); err != nil {
+			return nil, fmt.Errorf("decode releases page %d: %w", page, err)
+		}
+		for _, r := range rels {
+			tags = append(tags, r.TagName)
+			if !all && len(tags) >= limit {
+				return tags, nil
+			}
+		}
+		// Short page signals last page (GitHub fills full pages while
+		// more results remain).
+		if len(rels) < perPage {
+			return tags, nil
+		}
+	}
+}
+
 // TagExists returns nil if the tag exists, ErrTagNotFound on 404,
 // ErrRateLimited when GitHub reports the request as rate-limited, or another
 // error for other failures.

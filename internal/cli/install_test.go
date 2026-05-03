@@ -20,6 +20,13 @@ type fakeGitHub struct {
 	tagErr      error
 	calledTag   string
 	latestCalls int
+
+	listTags     []string
+	listErr      error
+	listLastArgs struct {
+		limit int
+		all   bool
+	}
 }
 
 func (g *fakeGitHub) Latest(ctx context.Context) (string, error) {
@@ -29,6 +36,17 @@ func (g *fakeGitHub) Latest(ctx context.Context) (string, error) {
 func (g *fakeGitHub) TagExists(ctx context.Context, tag string) error {
 	g.calledTag = tag
 	return g.tagErr
+}
+func (g *fakeGitHub) ListReleases(ctx context.Context, limit int, all bool) ([]string, error) {
+	g.listLastArgs.limit = limit
+	g.listLastArgs.all = all
+	if g.listErr != nil {
+		return nil, g.listErr
+	}
+	if all || limit >= len(g.listTags) {
+		return append([]string(nil), g.listTags...), nil
+	}
+	return append([]string(nil), g.listTags[:limit]...), nil
 }
 
 // fakeBuilder implements Builder.

@@ -30,7 +30,7 @@ func runCurrent(deps *Deps) error {
 	tag, err := deps.Resolver.Resolve(cwd)
 	if err != nil {
 		if errors.Is(err, version.ErrNoActiveVersion) {
-			return fmt.Errorf("No active version: %w", ErrUserError)
+			return fmt.Errorf("no active version: %w", ErrUserError)
 		}
 		return fmt.Errorf("resolve active version: %w", err)
 	}

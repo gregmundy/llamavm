@@ -29,6 +29,107 @@ func TestClient_Latest(t *testing.T) {
 	}
 }
 
+func TestClient_ListReleases_Limit(t *testing.T) {
+	// Server returns 100 tags but the client requests only 5; the URL's
+	// per_page should equal the limit when limit < 100 so we don't waste
+	// bandwidth fetching unused entries.
+	var seenPerPage string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/ggml-org/llama.cpp/releases" {
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+		seenPerPage = r.URL.Query().Get("per_page")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[
+			{"tag_name":"b9010"},
+			{"tag_name":"b9009"},
+			{"tag_name":"b9008"},
+			{"tag_name":"b9007"},
+			{"tag_name":"b9006"}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := New()
+	c.BaseURL = srv.URL
+	got, err := c.ListReleases(context.Background(), 5, false)
+	if err != nil {
+		t.Fatalf("ListReleases: %v", err)
+	}
+	want := []string{"b9010", "b9009", "b9008", "b9007", "b9006"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d tags, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if seenPerPage != "5" {
+		t.Errorf("per_page = %q, want %q (limit should bound page size)", seenPerPage, "5")
+	}
+}
+
+func TestClient_ListReleases_Pagination(t *testing.T) {
+	// --all collects across pages until a short page signals end-of-list.
+	var seenPages []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenPages = append(seenPages, r.URL.Query().Get("page"))
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("page") {
+		case "1":
+			// Full page of 100 (use synthetic shortened representation).
+			w.Write([]byte(`[` + repeatTag("b9010", 100) + `]`))
+		case "2":
+			// Short page (3 entries) → signals last page.
+			w.Write([]byte(`[{"tag_name":"a1"},{"tag_name":"a2"},{"tag_name":"a3"}]`))
+		default:
+			t.Errorf("unexpected page %q", r.URL.Query().Get("page"))
+		}
+	}))
+	defer srv.Close()
+
+	c := New()
+	c.BaseURL = srv.URL
+	got, err := c.ListReleases(context.Background(), 0, true)
+	if err != nil {
+		t.Fatalf("ListReleases all: %v", err)
+	}
+	if len(got) != 103 {
+		t.Fatalf("got %d tags, want 103 (100 + 3)", len(got))
+	}
+	if len(seenPages) != 2 || seenPages[0] != "1" || seenPages[1] != "2" {
+		t.Errorf("pages requested = %v, want [1 2]", seenPages)
+	}
+}
+
+// repeatTag emits n copies of a JSON release object joined by commas.
+func repeatTag(tag string, n int) string {
+	out := ""
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			out += ","
+		}
+		out += `{"tag_name":"` + tag + `"}`
+	}
+	return out
+}
+
+func TestClient_ListReleases_RateLimited(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := New()
+	c.BaseURL = srv.URL
+	_, err := c.ListReleases(context.Background(), 30, false)
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("err = %v, want ErrRateLimited", err)
+	}
+}
+
 func TestClient_Latest_BadStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
