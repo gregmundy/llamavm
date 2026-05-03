@@ -8,23 +8,25 @@ import (
 )
 
 // Installer materializes shim binaries by copying a single source binary
-// to ~/.llamavm/shims/<name> for each name in Names.
+// to ~/.llamavm/shims/<name> for each requested name.
 type Installer struct {
 	// Source returns the on-disk path of the llamavm-shim binary. Lazy
 	// because the path is only needed when at least one shim is missing.
 	Source func() (string, error)
 }
 
-// EnsureInstalled is idempotent: it creates shimsDir if needed and
-// copies the source binary for any name in Names that is not already
-// present. Pre-existing shims are left untouched (lets users keep an
-// older shim binary working after a llamavm upgrade if they pin it).
-func (i *Installer) EnsureInstalled(shimsDir string) error {
+// EnsureInstalled is idempotent: it creates shimsDir if needed and copies
+// the source binary for any name not already present. Pre-existing shims
+// are left untouched (lets users keep an older shim binary working after a
+// llamavm upgrade if they pin it). The names argument is what the caller
+// has discovered in the version's bin dir — typically every llama-*
+// executable produced by the build.
+func (i *Installer) EnsureInstalled(shimsDir string, names []string) error {
 	if err := os.MkdirAll(shimsDir, 0o755); err != nil {
 		return fmt.Errorf("create shims dir: %w", err)
 	}
-	missing := make([]string, 0, len(Names))
-	for _, name := range Names {
+	missing := make([]string, 0, len(names))
+	for _, name := range names {
 		if _, err := os.Stat(filepath.Join(shimsDir, name)); err == nil {
 			continue
 		}

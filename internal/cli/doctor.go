@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -89,16 +90,35 @@ func checkRootDir() doctorCheck {
 
 func checkShimFiles() doctorCheck {
 	return doctorCheck{
-		label:       "~/.llamavm/shims contains llama-cli, llama-server, llama-quantize",
-		remediation: "run 'llamavm install <version>' to install the shims",
+		label:       "every ~/.llamavm/shims/llama-* shim resolves to a binary in the active version",
+		remediation: "run 'llamavm install <version>' (or reinstall to pick up shims for new tools)",
 		run: func(_ context.Context, deps *Deps) bool {
-			for _, name := range []string{"llama-cli", "llama-server", "llama-quantize"} {
-				p := filepath.Join(deps.Store.ShimsDir(), name)
-				if _, err := os.Stat(p); err != nil {
+			shimsDir := deps.Store.ShimsDir()
+			entries, err := os.ReadDir(shimsDir)
+			if err != nil {
+				return false
+			}
+			// Need at least one llama-* shim to consider this check passing —
+			// catches the "no install has run yet" state.
+			active, _ := deps.Store.Active()
+			seen := 0
+			for _, e := range entries {
+				name := e.Name()
+				if !strings.HasPrefix(name, llamaBinaryPrefix) {
+					continue
+				}
+				seen++
+				if active == "" {
+					// Can't verify the shim resolves without an active version.
+					// Subsequent checks (#4, #5) cover that case directly.
+					continue
+				}
+				binPath := filepath.Join(deps.Store.VersionDir(active), "bin", name)
+				if _, err := os.Stat(binPath); err != nil {
 					return false
 				}
 			}
-			return true
+			return seen > 0
 		},
 	}
 }

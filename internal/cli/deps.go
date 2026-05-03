@@ -71,11 +71,11 @@ type Resolver interface {
 	ResolveDetailed(cwd string) (version.Resolution, error)
 }
 
-// ShimInstaller writes the three shim binaries into the shims directory.
-// Implementations must be idempotent: calling EnsureInstalled twice with
-// the same shimsDir is a no-op the second time.
+// ShimInstaller writes shim binaries into the shims directory, one per
+// requested name. Implementations must be idempotent: calling
+// EnsureInstalled twice with the same args is a no-op the second time.
 type ShimInstaller interface {
-	EnsureInstalled(shimsDir string) error
+	EnsureInstalled(shimsDir string, names []string) error
 }
 
 // Benchmarker runs a single bench against a model. Implementations honor

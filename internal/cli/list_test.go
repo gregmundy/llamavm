@@ -138,14 +138,17 @@ func (r *fakeResolver) ResolveDetailed(cwd string) (version.Resolution, error) {
 	return version.Resolution{Tag: r.tag, Source: r.source, Path: path}, nil
 }
 
-// fakeShimInstaller implements ShimInstaller; records each call.
+// fakeShimInstaller implements ShimInstaller; records each call's
+// shimsDir AND the names list it received.
 type fakeShimInstaller struct {
-	calls []string
-	err   error
+	calls    []string
+	gotNames [][]string
+	err      error
 }
 
-func (i *fakeShimInstaller) EnsureInstalled(shimsDir string) error {
+func (i *fakeShimInstaller) EnsureInstalled(shimsDir string, names []string) error {
 	i.calls = append(i.calls, shimsDir)
+	i.gotNames = append(i.gotNames, append([]string(nil), names...))
 	return i.err
 }
 

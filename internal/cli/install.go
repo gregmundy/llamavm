@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -19,11 +21,12 @@ import (
 
 const llamaCppRepoURL = "https://github.com/ggml-org/llama.cpp.git"
 
-// binaryNames are symlinked into <version>/bin/ during install (so shim
-// dispatch can find them) AND get the LC_RPATH @loader_path rewrite so they
-// load dylibs after the staging→final dir rename. llama-bench is included
-// because the bench Runner invokes it; it is not exposed via shim.
-var binaryNames = []string{"llama-cli", "llama-server", "llama-quantize", "llama-bench"}
+// llamaBinaryPrefix is the namespace llamavm shims into PATH. Anything in
+// build/bin that starts with this prefix and is executable gets a symlink
+// in <version>/bin/ and a shim in ~/.llamavm/shims/. Other build artifacts
+// (test runners, ggml utilities) are left alone.
+const llamaBinaryPrefix = "llama-"
+
 var validTagRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 func newInstallCmd(deps *Deps) *cobra.Command {
@@ -105,7 +108,12 @@ func runInstall(ctx context.Context, deps *Deps, requested string) error {
 		return cleanup("relocate rpaths", err)
 	}
 
-	if err := symlinkBinaries(staging, source); err != nil {
+	discovered, err := discoverLlamaBinaries(binDir)
+	if err != nil {
+		return cleanup("discover binaries", err)
+	}
+
+	if err := symlinkBinaries(staging, source, discovered); err != nil {
 		return cleanup("link binaries", err)
 	}
 
@@ -113,7 +121,7 @@ func runInstall(ctx context.Context, deps *Deps, requested string) error {
 		return cleanup("promote staging", err)
 	}
 
-	if err := deps.ShimInstaller.EnsureInstalled(deps.Store.ShimsDir()); err != nil {
+	if err := deps.ShimInstaller.EnsureInstalled(deps.Store.ShimsDir(), discovered); err != nil {
 		return fmt.Errorf("install shims: %w", err)
 	}
 
@@ -127,8 +135,60 @@ func runInstall(ctx context.Context, deps *Deps, requested string) error {
 	}
 
 	elapsed := time.Since(start).Round(time.Second)
-	fmt.Fprintf(deps.Stdout, "Installed %s in %s\n", tag, elapsed)
+	fmt.Fprintf(deps.Stdout, "Installed %s in %s with %s\n", tag, elapsed, summarizeShims(discovered))
 	return nil
+}
+
+// discoverLlamaBinaries returns the names (sorted) of all executable
+// regular-file build artifacts in buildBinDir whose filename starts with
+// llamaBinaryPrefix. Symlinks are skipped: cmake produces lib*.dylib
+// symlink chains in this dir; we only want the underlying tool binaries.
+//
+// Returns an error when buildBinDir is missing (build problem) or when no
+// matching binaries are found (the build succeeded but produced nothing
+// useful).
+func discoverLlamaBinaries(buildBinDir string) ([]string, error) {
+	entries, err := os.ReadDir(buildBinDir)
+	if err != nil {
+		return nil, fmt.Errorf("read build/bin: %w", err)
+	}
+	var names []string
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasPrefix(name, llamaBinaryPrefix) {
+			continue
+		}
+		// Regular files only — skip directories and symlinks.
+		if e.Type()&(os.ModeDir|os.ModeSymlink) != 0 {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.Mode()&0o111 == 0 {
+			continue // not executable
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return nil, fmt.Errorf("no %s* executables found in %s — the build succeeded but produced nothing usable", llamaBinaryPrefix, buildBinDir)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// summarizeShims returns a one-line "with N shims: a, b, c, …" suffix
+// suitable for the install completion line. Truncates to first 5 plus a
+// "(... K more)" note to keep the line readable when llama.cpp ships a
+// dozen+ tools.
+func summarizeShims(names []string) string {
+	const head = 5
+	if len(names) <= head {
+		return fmt.Sprintf("%d shims: %s", len(names), strings.Join(names, ", "))
+	}
+	return fmt.Sprintf("%d shims: %s (... %d more)",
+		len(names), strings.Join(names[:head], ", "), len(names)-head)
 }
 
 // relocateRpaths rewrites every Mach-O LC_RPATH that points at binDir
@@ -139,9 +199,9 @@ func runInstall(ctx context.Context, deps *Deps, requested string) error {
 // overriding the cmake hint — hence this post-build pass via macOS's
 // install_name_tool (already required as part of Xcode CLT).
 //
-// Touches all *.dylib files plus the three llama-* binaries. Other tools
-// produced by the build (e.g. export-graph-ops) are left alone since they
-// are not exposed via shims.
+// Touches all *.dylib files plus any executable starting with `llama-`.
+// Other tools produced by the build (e.g. export-graph-ops) are left
+// alone since they are not exposed via shims.
 func relocateRpaths(ctx context.Context, runner CommandRunner, binDir string, logWriter io.Writer) error {
 	entries, err := os.ReadDir(binDir)
 	if err != nil {
@@ -181,30 +241,25 @@ func relocateRpaths(ctx context.Context, runner CommandRunner, binDir string, lo
 }
 
 // shouldRelocate returns true for files we want to make position-independent:
-// any dylib, plus the three named binaries the shims dispatch to.
+// any dylib, plus any binary in the llama-* namespace.
 func shouldRelocate(name string) bool {
 	if filepath.Ext(name) == ".dylib" {
 		return true
 	}
-	for _, bin := range binaryNames {
-		if name == bin {
-			return true
-		}
-	}
-	return false
+	return strings.HasPrefix(name, llamaBinaryPrefix)
 }
 
 // symlinkBinaries creates staging/bin/<name> -> ../source/build/bin/<name>
-// for each binary in binaryNames. Targets are RELATIVE so the symlinks
-// survive the staging→final dir rename in PromoteStaging — an absolute
-// target would still spell `.staging-<tag>` after the parent's rename and
-// dangle.
-func symlinkBinaries(staging, source string) error {
+// for each name in the discovered list. Targets are RELATIVE so the
+// symlinks survive the staging→final dir rename in PromoteStaging — an
+// absolute target would still spell `.staging-<tag>` after the parent's
+// rename and dangle.
+func symlinkBinaries(staging, source string, names []string) error {
 	binDir := filepath.Join(staging, "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		return fmt.Errorf("create bin dir: %w", err)
 	}
-	for _, name := range binaryNames {
+	for _, name := range names {
 		absTarget := filepath.Join(source, "build", "bin", name)
 		if _, err := os.Stat(absTarget); err != nil {
 			return fmt.Errorf("missing built binary %s: %w", name, err)

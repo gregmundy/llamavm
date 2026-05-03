@@ -68,28 +68,41 @@ func TestDoctor_AllChecksPass(t *testing.T) {
 	}
 }
 
-// runDoctorWithFakeShims creates a temp shims dir, optionally populates it
-// with the three expected shim files, and returns deps wired to it.
+// runDoctorWithFakeShims creates a temp shims dir AND a parallel version
+// dir (so checkShimFiles can resolve each shim to a real on-disk binary
+// in the active version's bin/). When populate is true, both shims and
+// binaries are written; when false, neither is.
 func runDoctorWithFakeShims(t *testing.T, populate bool) (*Deps, string) {
 	t.Helper()
 	root := t.TempDir()
 	shimsDir := filepath.Join(root, ".llamavm", "shims")
+	versionDir := filepath.Join(root, ".llamavm", "versions", "b5046")
 	if populate {
 		if err := os.MkdirAll(shimsDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		versionBin := filepath.Join(versionDir, "bin")
+		if err := os.MkdirAll(versionBin, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		for _, name := range []string{"llama-cli", "llama-server", "llama-quantize"} {
 			if err := os.WriteFile(filepath.Join(shimsDir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
+			// And the corresponding binary in the active version's bin so
+			// checkShimFiles' resolution lookup succeeds.
+			if err := os.WriteFile(filepath.Join(versionBin, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	deps := healthyDoctorDeps(t)
 	deps.Store = &fakeStore{
-		installed: []string{"b5046"},
-		active:    "b5046",
-		hasActive: true,
-		shimsDir:  shimsDir,
+		installed:    []string{"b5046"},
+		active:       "b5046",
+		hasActive:    true,
+		shimsDir:     shimsDir,
+		versionDirFn: func(_ string) string { return versionDir },
 	}
 	deps.Getenv = func(key string) string {
 		if key == "PATH" {
@@ -126,8 +139,8 @@ func TestDoctor_ShimsDirMissingShimFiles(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected non-nil err when shim files missing")
 	}
-	if !strings.Contains(out, "✗ ~/.llamavm/shims contains llama-cli, llama-server, llama-quantize") {
-		t.Fatalf("expected shim-files fail line, got:\n%s", out)
+	if !strings.Contains(out, "✗ every ~/.llamavm/shims/llama-* shim resolves") {
+		t.Fatalf("expected shim-resolution fail line, got:\n%s", out)
 	}
 	if !strings.Contains(out, "llamavm install") {
 		t.Fatalf("remediation should mention 'llamavm install', got:\n%s", out)

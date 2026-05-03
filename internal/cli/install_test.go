@@ -13,6 +13,131 @@ import (
 	gh "github.com/gregmundy/llamavm/internal/github"
 )
 
+// testInstalledBinaries is the set of llama-* executables the simulated
+// "git clone" fixture writes into build/bin. It's deliberately wider than
+// the historical hardcoded list (adds llama-bench) so install tests
+// exercise the dynamic discovery path against multiple matches.
+var testInstalledBinaries = []string{"llama-cli", "llama-server", "llama-quantize", "llama-bench"}
+
+func TestDiscoverLlamaBinaries_FiltersToExecutableLlamaPrefix(t *testing.T) {
+	dir := t.TempDir()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Matching: llama-* + executable
+	must(os.WriteFile(filepath.Join(dir, "llama-cli"), []byte("x"), 0o755))
+	must(os.WriteFile(filepath.Join(dir, "llama-embedding"), []byte("x"), 0o755))
+	must(os.WriteFile(filepath.Join(dir, "llama-tokenize"), []byte("x"), 0o755))
+	// Skipped: not in llama-* namespace
+	must(os.WriteFile(filepath.Join(dir, "export-graph-ops"), []byte("x"), 0o755))
+	must(os.WriteFile(filepath.Join(dir, "ggml-bench"), []byte("x"), 0o755))
+	// Skipped: llama-* but not executable
+	must(os.WriteFile(filepath.Join(dir, "llama-readme.md"), []byte("docs"), 0o644))
+	// Skipped: directory
+	must(os.MkdirAll(filepath.Join(dir, "llama-subdir"), 0o755))
+	// Skipped: symlink (cmake-style versioned dylib chain)
+	must(os.WriteFile(filepath.Join(dir, "llama-real"), []byte("x"), 0o755))
+	must(os.Symlink("llama-real", filepath.Join(dir, "llama-link")))
+
+	got, err := discoverLlamaBinaries(dir)
+	if err != nil {
+		t.Fatalf("discoverLlamaBinaries: %v", err)
+	}
+	want := []string{"llama-cli", "llama-embedding", "llama-real", "llama-tokenize"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i, n := range want {
+		if got[i] != n {
+			t.Fatalf("got[%d] = %q, want %q (full got=%v)", i, got[i], n, got)
+		}
+	}
+}
+
+func TestDiscoverLlamaBinaries_MissingDirIsError(t *testing.T) {
+	if _, err := discoverLlamaBinaries("/no/such/path"); err == nil {
+		t.Fatal("expected error when build/bin is missing")
+	}
+}
+
+func TestDiscoverLlamaBinaries_NoMatchesIsError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "ggml-bench"), []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := discoverLlamaBinaries(dir)
+	if err == nil {
+		t.Fatal("expected error when no llama-* executables found")
+	}
+	if !strings.Contains(err.Error(), "no llama-") {
+		t.Fatalf("err = %v, want it to mention 'no llama-'", err)
+	}
+}
+
+func TestSummarizeShims_ShortListNoTruncation(t *testing.T) {
+	got := summarizeShims([]string{"a", "b", "c"})
+	want := "3 shims: a, b, c"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestSummarizeShims_LongListTruncatesAndCounts(t *testing.T) {
+	got := summarizeShims([]string{"a", "b", "c", "d", "e", "f", "g", "h"})
+	want := "8 shims: a, b, c, d, e (... 3 more)"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestInstall_HappyPathPrintsShimSummary(t *testing.T) {
+	store := newRealPathStore(t)
+	deps, _, _, _, _ := newInstallDeps(t, store)
+	out, _, err := runRoot(t, deps, "install", "b5046")
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	// All four llama-* test binaries should appear in the shim summary.
+	if !strings.Contains(out, "with 4 shims:") {
+		t.Fatalf("expected install line to summarize 4 shims; out=%s", out)
+	}
+	for _, name := range testInstalledBinaries {
+		if !strings.Contains(out, name) {
+			t.Fatalf("install line missing shim name %q; out=%s", name, out)
+		}
+	}
+}
+
+func TestInstall_PassesDiscoveredNamesToShimInstaller(t *testing.T) {
+	store := newRealPathStore(t)
+	deps, _, _, _, si := newInstallDeps(t, store)
+	if _, _, err := runRoot(t, deps, "install", "b5046"); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if len(si.gotNames) != 1 {
+		t.Fatalf("ShimInstaller calls = %d, want 1", len(si.gotNames))
+	}
+	got := si.gotNames[0]
+	// Must include all four discovered binaries; must NOT include the
+	// non-llama helpers we wrote alongside in the fixture.
+	wantSet := map[string]bool{
+		"llama-cli": true, "llama-server": true,
+		"llama-quantize": true, "llama-bench": true,
+	}
+	for _, name := range got {
+		if !wantSet[name] {
+			t.Fatalf("ShimInstaller received unexpected name %q (got=%v)", name, got)
+		}
+		delete(wantSet, name)
+	}
+	if len(wantSet) != 0 {
+		t.Fatalf("ShimInstaller missing names: %v (got=%v)", wantSet, got)
+	}
+}
+
 // fakeGitHub implements GitHubClient.
 type fakeGitHub struct {
 	latest      string
@@ -156,10 +281,19 @@ func newInstallDeps(t *testing.T, store Store) (*Deps, *fakeGitHub, *fakeBuilder
 		if err := os.MkdirAll(bin, 0o755); err != nil {
 			return err
 		}
-		for _, name := range binaryNames {
+		// Mix of matching binaries (llama-*, executable), a non-matching
+		// helper (export-graph-ops), and a non-executable file (libfoo.dylib
+		// stub). Discovery should pick exactly the four llama-* executables.
+		for _, name := range testInstalledBinaries {
 			if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
 				return err
 			}
+		}
+		if err := os.WriteFile(filepath.Join(bin, "export-graph-ops"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(bin, "libfoo.dylib"), []byte("not an executable"), 0o644); err != nil {
+			return err
 		}
 		return nil
 	}}
@@ -269,7 +403,7 @@ func TestInstall_HappyPath(t *testing.T) {
 	// Bin symlinks must exist in final dir, BE RELATIVE (so they survive
 	// the staging→final dir rename), AND resolve to the build artifact.
 	finalBin := filepath.Join(store.root, "versions", "b5046", "bin")
-	for _, name := range binaryNames {
+	for _, name := range testInstalledBinaries {
 		link := filepath.Join(finalBin, name)
 		fi, err := os.Lstat(link)
 		if err != nil {
@@ -295,7 +429,7 @@ func TestInstall_HappyPath(t *testing.T) {
 	// dylibs become unfindable after staging→final dir rename.
 	stagingBin := filepath.Join(store.root, "versions", ".staging-b5046", "source", "build", "bin")
 	wantTargets := map[string]bool{}
-	for _, n := range binaryNames {
+	for _, n := range testInstalledBinaries {
 		wantTargets[filepath.Join(stagingBin, n)] = false
 	}
 	for _, c := range r.calls {

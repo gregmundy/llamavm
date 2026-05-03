@@ -9,10 +9,6 @@ import (
 	"path/filepath"
 )
 
-// Names is the canonical list of shim binary names llamavm manages.
-// Adding a new shim in v2 requires only appending to this slice.
-var Names = []string{"llama-cli", "llama-server", "llama-quantize"}
-
 // ExitNotFound is the conventional exit code for "command not found"
 // (PRD §6.4 and §3.12.2 require 127 for shim resolution failures).
 const ExitNotFound = 127
