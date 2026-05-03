@@ -78,11 +78,14 @@ Compare every installed version against a model:
 ```
 $ llamavm bench all --model ~/models/gemma-4-E4B-it-Q4_K_M.gguf
 Version   Tokens/sec   Total Time   Status
-b9009     35.1 t/s     5.1s         +0.3% vs current
-b9010     35.0 t/s     5.1s         current
+b9009     38.0 t/s     5.0s         +5.6% vs current
+b9010     36.0 t/s     5.1s         current
+b8500     35.9 t/s     5.2s         ≈ current
 
-Best: b9009 (35.1 t/s)
+Best: b9009 (38.0 t/s)
 ```
+
+Differences below 0.5% are reported as `≈ current` rather than a small signed delta — single-run benchmarks can't distinguish that signal from run-to-run jitter. If the best version is also within noise of the current one, the `Best:` line reads `current (within noise)` instead of crowning a non-winner.
 
 Single-version run:
 
@@ -115,7 +118,9 @@ Run any subcommand with `--help` for full options.
 
 `llamavm install <tag>` clones llama.cpp at the given tag into a staging directory, runs the standard cmake build with Metal enabled, and atomically renames the result into `~/.llamavm/versions/<tag>/`. Failed builds leave no trace in `llamavm list`.
 
-The first install also drops three small Go binaries — `llama-cli`, `llama-server`, `llama-quantize` — into `~/.llamavm/shims/`. When invoked, each shim walks up from the current directory looking for `.llama-version`, then falls back to `~/.llamavm/current`, then `exec`s the corresponding binary inside the resolved version's directory. Shim overhead is under 50ms.
+After the build completes, llamavm scans `<version>/source/build/bin/` for executable files matching `llama-*` and drops a small Go shim binary into `~/.llamavm/shims/` for each one — typically ~50 tools per current llama.cpp release (`llama-cli`, `llama-server`, `llama-bench`, `llama-embedding`, `llama-tokenize`, `llama-perplexity`, `llama-mtmd-cli`, ...). Future llama.cpp releases that ship new tools get shimmed automatically with no llamavm change. When invoked, each shim walks up from the current directory looking for `.llama-version`, then falls back to `~/.llamavm/current`, then `exec`s the corresponding binary inside the resolved version's directory. Shim overhead is under 50ms.
+
+`llamavm uninstall <tag>` removes the version and garbage-collects shims that no remaining install provides; shared shims (still backed by another version) are kept. If you upgraded llamavm itself and want a previously-installed version's full shim set, just reinstall that tag — the new shims will land in `~/.llamavm/shims/` regardless of which version is currently active.
 
 ## Uninstall
 
