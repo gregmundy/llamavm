@@ -32,42 +32,65 @@ export PATH="$HOME/.llamavm/shims:$PATH"
 # Install the latest llama.cpp release
 llamavm install latest
 
+# Confirm everything is wired correctly (8/8 ✓ when ready)
+llamavm doctor
+
 # List installed versions; the active one is marked with *
 llamavm list
 
-# Switch the global active version
-llamavm use b5046
+# Install another version and compare side-by-side
+llamavm install b9009
+llamavm use latest          # switches active to the newest installed tag
 
 # Pin a specific version for the current project
-llamavm pin b5046
-
-# Confirm everything is wired correctly
-llamavm doctor
+cd ~/myproject
+llamavm pin b9009           # writes .llama-version here
 ```
 
 `llama-cli`, `llama-server`, and `llama-quantize` are now on your PATH and dispatch to the active version automatically. Per-directory pinning takes precedence over the global `current` file.
+
+## Diagnostics
+
+`llamavm info` is the one-screen view of what's running and why:
+
+```
+$ llamavm info
+Tag:    b9010
+Source: from /Users/greg/.llamavm/current
+Build:  d05fe1d (llama.cpp git SHA)
+Path:   /Users/greg/.llamavm/versions/b9010
+Built:  2026-05-02 20:50 EDT
+```
+
+In a directory with a pin file, `Source:` will show `pinned at <path>` instead, so you always know where the resolved tag came from. The `Build:` SHA is what `llama-cli --version` reports — handy for cross-referencing bug reports against upstream commits.
+
+For a quick scriptable check:
+
+```bash
+llamavm current             # → b9010 (just the tag)
+llamavm current -v          # → b9010 (from /Users/greg/.llamavm/current)
+```
 
 ## Benchmarking
 
 Compare every installed version against a model:
 
 ```
-$ llamavm bench all --model ~/models/llama-3.2-1b-instruct-q4_k_m.gguf
-Version  Tokens/s   Total time   Δ vs current
-b5046    44.72       9.8s         baseline (current)
-b5489    47.21       9.2s         +5.6%
-b5400    43.10      10.1s         -3.6%
+$ llamavm bench all --model ~/models/gemma-4-E4B-it-Q4_K_M.gguf
+Version   Tokens/sec   Total Time   Status
+b9009     35.1 t/s     5.1s         +0.3% vs current
+b9010     35.0 t/s     5.1s         current
 
-Best: b5489 (47.21 tok/s)
+Best: b9009 (35.1 t/s)
 ```
 
 Single-version run:
 
 ```bash
-llamavm bench b5046 --model ~/models/llama-3.2-1b-instruct-q4_k_m.gguf
+llamavm bench b9010 --model ~/models/gemma-4-E4B-it-Q4_K_M.gguf
 ```
 
-Results are cached by `(version, model-fingerprint)` under `~/.llamavm/benchmarks/`. Pass `--no-cache` to force a re-run.
+Internally this drives `llama-bench` with `-p 256 -n 128 -ngl 99 -r 1` against your model and records the token-generation throughput (`tg<N>` row). Results are cached by `(version, model-fingerprint)` under `~/.llamavm/benchmarks/`; pass `--no-cache` to force a re-run.
 
 ## Commands
 
@@ -78,9 +101,10 @@ Results are cached by `(version, model-fingerprint)` under `~/.llamavm/benchmark
 | `llamavm uninstall <tag>` | Remove a previously installed version |
 | `llamavm list` | Show installed versions; active one marked with `*` |
 | `llamavm list-remote` | Show the most recent llama.cpp releases on GitHub |
-| `llamavm use <tag>` | Set the global active version |
-| `llamavm current` | Print the currently active version (respects `.llama-version`) |
+| `llamavm use <tag>` | Set the global active version (`<tag>` may be `latest`) |
+| `llamavm current [-v]` | Print the active version (respects `.llama-version`); `-v` shows resolution source |
 | `llamavm pin <tag>` | Write `.llama-version` in the current directory |
+| `llamavm info [<tag>]` | Show tag, source, git SHA, install path, and install time |
 | `llamavm bench <tag> --model <path>` | Benchmark a single version |
 | `llamavm bench all --model <path>` | Benchmark every installed version |
 | `llamavm doctor` | Diagnose installation and PATH configuration |
