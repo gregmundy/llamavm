@@ -32,28 +32,66 @@ func NewResolver(s *Store, home string) *Resolver {
 	return &Resolver{store: s, home: home}
 }
 
+// Source identifies which mechanism supplied the resolved tag — the per-
+// directory pin file or the global current file. Useful for diagnostics
+// like `llamavm current --verbose`.
+type Source int
+
+const (
+	// SourceCurrent: tag came from ~/.llamavm/current.
+	SourceCurrent Source = iota
+	// SourcePin: tag came from a .llama-version file in cwd or an ancestor.
+	SourcePin
+)
+
+// Resolution carries the resolved tag plus where it came from. Path is the
+// absolute filesystem path of the file that supplied the tag (the
+// .llama-version or the current file).
+type Resolution struct {
+	Tag    string
+	Source Source
+	Path   string
+}
+
 // Resolve returns the active tag for shim invocations rooted at cwd.
 // If cwd is empty, the walk is skipped and only ~/.llamavm/current is consulted
 // — useful for tests and for callers that have no meaningful cwd.
+//
+// Existing thin signature retained for callers that don't care about the
+// source; ResolveDetailed exposes both.
 func (r *Resolver) Resolve(cwd string) (string, error) {
+	res, err := r.ResolveDetailed(cwd)
+	if err != nil {
+		return "", err
+	}
+	return res.Tag, nil
+}
+
+// ResolveDetailed performs the same resolution as Resolve but returns the
+// Source and the path of the file that supplied the tag.
+func (r *Resolver) ResolveDetailed(cwd string) (Resolution, error) {
 	if cwd != "" {
-		tag, found, err := r.findInAncestors(cwd)
+		tag, pinPath, found, err := r.findInAncestors(cwd)
 		if err != nil {
-			return "", err
+			return Resolution{}, err
 		}
 		if found {
-			return tag, nil
+			return Resolution{Tag: tag, Source: SourcePin, Path: pinPath}, nil
 		}
 	}
-	return r.store.Active()
+	tag, err := r.store.Active()
+	if err != nil {
+		return Resolution{}, err
+	}
+	return Resolution{Tag: tag, Source: SourceCurrent, Path: r.store.CurrentFile()}, nil
 }
 
 // findInAncestors walks dir → parent → ... checking for PinFileName at each
 // level. Stops after checking r.home (or after the filesystem root if home is
-// empty or cwd is outside the home tree). Returns (tag, true, nil) on a match,
-// ("", false, nil) on no match, or an error on read failures other than
-// fs.ErrNotExist.
-func (r *Resolver) findInAncestors(start string) (string, bool, error) {
+// empty or cwd is outside the home tree). Returns (tag, pinPath, true, nil)
+// on a match, ("", "", false, nil) on no match, or an error on read failures
+// other than fs.ErrNotExist.
+func (r *Resolver) findInAncestors(start string) (string, string, bool, error) {
 	dir := start
 	for {
 		candidate := filepath.Join(dir, PinFileName)
@@ -62,20 +100,20 @@ func (r *Resolver) findInAncestors(start string) (string, bool, error) {
 		case err == nil:
 			tag := strings.TrimSpace(string(b))
 			if tag != "" {
-				return tag, true, nil
+				return tag, candidate, true, nil
 			}
 			// Empty/whitespace pin file: treat as no pin and keep walking.
 		case errors.Is(err, fs.ErrNotExist):
 			// Not pinned at this level; keep walking.
 		default:
-			return "", false, fmt.Errorf("read %s: %w", candidate, err)
+			return "", "", false, fmt.Errorf("read %s: %w", candidate, err)
 		}
 		if r.home != "" && dir == r.home {
-			return "", false, nil
+			return "", "", false, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", false, nil
+			return "", "", false, nil
 		}
 		dir = parent
 	}

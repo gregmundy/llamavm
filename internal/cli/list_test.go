@@ -111,15 +111,31 @@ func (s *fakeStore) BenchmarksDir() string {
 
 // fakeResolver implements Resolver. lastCwd records what Resolve was called
 // with so tests can assert that subcommands threaded cwd through correctly.
+// source/sourcePath let tests script ResolveDetailed responses; they default
+// to SourceCurrent + a sentinel path when unset.
 type fakeResolver struct {
-	tag     string
-	err     error
-	lastCwd string
+	tag        string
+	err        error
+	lastCwd    string
+	source     version.Source
+	sourcePath string
 }
 
 func (r *fakeResolver) Resolve(cwd string) (string, error) {
 	r.lastCwd = cwd
 	return r.tag, r.err
+}
+
+func (r *fakeResolver) ResolveDetailed(cwd string) (version.Resolution, error) {
+	r.lastCwd = cwd
+	if r.err != nil {
+		return version.Resolution{}, r.err
+	}
+	path := r.sourcePath
+	if path == "" {
+		path = "/fake/.llamavm/current"
+	}
+	return version.Resolution{Tag: r.tag, Source: r.source, Path: path}, nil
 }
 
 // fakeShimInstaller implements ShimInstaller; records each call.

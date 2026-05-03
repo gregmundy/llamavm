@@ -57,6 +57,70 @@ func TestCurrent_PropagatesUnexpectedError(t *testing.T) {
 	}
 }
 
+func TestCurrent_VerboseShowsPinSource(t *testing.T) {
+	res := &fakeResolver{
+		tag:        "b5046",
+		source:     version.SourcePin,
+		sourcePath: "/work/project/.llama-version",
+	}
+	deps := &Deps{
+		Store:    &fakeStore{},
+		Resolver: res,
+		Getwd:    func() (string, error) { return "/work/project", nil },
+	}
+	out, _, err := runRoot(t, deps, "current", "-v")
+	if err != nil {
+		t.Fatalf("current -v: %v", err)
+	}
+	want := "b5046 (pinned at /work/project/.llama-version)\n"
+	if out != want {
+		t.Fatalf("stdout = %q, want %q", out, want)
+	}
+}
+
+func TestCurrent_VerboseShowsCurrentFileSource(t *testing.T) {
+	res := &fakeResolver{
+		tag:        "b5046",
+		source:     version.SourceCurrent,
+		sourcePath: "/home/u/.llamavm/current",
+	}
+	deps := &Deps{
+		Store:    &fakeStore{},
+		Resolver: res,
+		Getwd:    func() (string, error) { return "/work/project", nil },
+	}
+	out, _, err := runRoot(t, deps, "current", "--verbose")
+	if err != nil {
+		t.Fatalf("current --verbose: %v", err)
+	}
+	want := "b5046 (from /home/u/.llamavm/current)\n"
+	if out != want {
+		t.Fatalf("stdout = %q, want %q", out, want)
+	}
+}
+
+func TestCurrent_NoVerboseStillJustTheTag(t *testing.T) {
+	// Regression: -v defaults off; bare `current` keeps its scriptable
+	// one-line output.
+	res := &fakeResolver{
+		tag:        "b5046",
+		source:     version.SourcePin,
+		sourcePath: "/work/.llama-version",
+	}
+	deps := &Deps{
+		Store:    &fakeStore{},
+		Resolver: res,
+		Getwd:    func() (string, error) { return "/work", nil },
+	}
+	out, _, err := runRoot(t, deps, "current")
+	if err != nil {
+		t.Fatalf("current: %v", err)
+	}
+	if out != "b5046\n" {
+		t.Fatalf("stdout = %q, want plain tag (no source) when -v is off", out)
+	}
+}
+
 func TestCurrent_GetwdErrorPropagates(t *testing.T) {
 	deps := &Deps{
 		Store:    &fakeStore{},

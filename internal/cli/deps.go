@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gregmundy/llamavm/internal/bench"
+	"github.com/gregmundy/llamavm/internal/version"
 )
 
 // ErrUserError marks errors caused by user input (version not installed, version
@@ -63,6 +64,11 @@ type Platform interface {
 // resolver will then consult only ~/.llamavm/current.
 type Resolver interface {
 	Resolve(cwd string) (string, error)
+	// ResolveDetailed additionally returns the source of the tag (pin file
+	// vs ~/.llamavm/current) and the path of the file that supplied it.
+	// Used by `llamavm current --verbose` to tell the user why they're on
+	// the version they're on.
+	ResolveDetailed(cwd string) (version.Resolution, error)
 }
 
 // ShimInstaller writes the three shim binaries into the shims directory.
