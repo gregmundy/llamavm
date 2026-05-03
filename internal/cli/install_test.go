@@ -64,10 +64,12 @@ func (b *fakeBuilder) Build(ctx context.Context, srcDir string, log io.Writer) e
 	return b.err
 }
 
-// fakeRunner implements CommandRunner. Used for git clone.
+// fakeRunner implements CommandRunner. Used for git clone (cloneFn) and
+// for any other invocation (stdoutFn, e.g. `git rev-parse` for `info`).
 type fakeCmdRunner struct {
-	calls   []recordedCall
-	cloneFn func(args []string, dir string) error
+	calls    []recordedCall
+	cloneFn  func(args []string, dir string) error
+	stdoutFn func(name string, args []string, w io.Writer)
 }
 
 type recordedCall struct {
@@ -78,6 +80,9 @@ type recordedCall struct {
 
 func (r *fakeCmdRunner) Run(ctx context.Context, name string, args []string, dir string, stdout, stderr io.Writer) error {
 	r.calls = append(r.calls, recordedCall{Name: name, Args: append([]string(nil), args...), Dir: dir})
+	if r.stdoutFn != nil {
+		r.stdoutFn(name, args, stdout)
+	}
 	if r.cloneFn != nil && name == "git" {
 		return r.cloneFn(args, dir)
 	}
