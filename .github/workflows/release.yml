@@ -28,3 +28,6 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Fine-grained PAT scoped to gregmundy/homebrew-tap (Contents: write)
+          # so goreleaser's `brews:` block can commit the formula bump there.
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

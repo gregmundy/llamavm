@@ -59,7 +59,7 @@ brews:
     homepage: "https://github.com/gregmundy/llamavm"
     description: "Version manager for llama.cpp on Apple Silicon"
     license: "MIT"
-    skip_upload: true
+    skip_upload: false
     install: |
       bin.install "llamavm"
       bin.install "llamavm-shim"
