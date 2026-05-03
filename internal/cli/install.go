@@ -96,6 +96,11 @@ func runInstall(ctx context.Context, deps *Deps, requested string) error {
 		return cleanup("build", err)
 	}
 
+	binDir := filepath.Join(source, "build", "bin")
+	if err := relocateRpaths(ctx, deps.Git, binDir, &buildLog); err != nil {
+		return cleanup("relocate rpaths", err)
+	}
+
 	if err := symlinkBinaries(staging, source); err != nil {
 		return cleanup("link binaries", err)
 	}
@@ -120,6 +125,69 @@ func runInstall(ctx context.Context, deps *Deps, requested string) error {
 	elapsed := time.Since(start).Round(time.Second)
 	fmt.Fprintf(deps.Stdout, "Installed %s in %s\n", tag, elapsed)
 	return nil
+}
+
+// relocateRpaths rewrites every Mach-O LC_RPATH that points at binDir
+// (the absolute build-output dir) to @loader_path, so binaries and dylibs
+// find each other relative to their own location after the staging→final
+// dir rename. CMAKE_BUILD_RPATH_USE_ORIGIN=ON is set in builder.go but
+// llama.cpp's CMakeLists pins LC_RPATH to the build dir explicitly,
+// overriding the cmake hint — hence this post-build pass via macOS's
+// install_name_tool (already required as part of Xcode CLT).
+//
+// Touches all *.dylib files plus the three llama-* binaries. Other tools
+// produced by the build (e.g. export-graph-ops) are left alone since they
+// are not exposed via shims.
+func relocateRpaths(ctx context.Context, runner CommandRunner, binDir string, logWriter io.Writer) error {
+	entries, err := os.ReadDir(binDir)
+	if err != nil {
+		return fmt.Errorf("read build/bin: %w", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() {
+			continue
+		}
+		// Skip symlinks: cmake produces a chain like
+		//   libggml-base.dylib → libggml-base.0.dylib → libggml-base.0.10.2.dylib
+		// where the first two are symlinks to the third. install_name_tool
+		// dereferences them, so processing each name would call add_rpath
+		// three times on the same underlying file and the second call fails
+		// with "rpath already exists". Only touch the regular file.
+		if entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		if !shouldRelocate(name) {
+			continue
+		}
+		path := filepath.Join(binDir, name)
+		// Delete the absolute build-dir LC_RPATH then add @loader_path.
+		// install_name_tool's exit codes don't distinguish "no such rpath"
+		// from a real error, so on delete we tolerate failure (the file may
+		// legitimately have no matching LC_RPATH, e.g. a dylib that didn't
+		// link other dylibs) and let add proceed.
+		_ = runner.Run(ctx, "install_name_tool",
+			[]string{"-delete_rpath", binDir, path}, "", logWriter, logWriter)
+		if err := runner.Run(ctx, "install_name_tool",
+			[]string{"-add_rpath", "@loader_path", path}, "", logWriter, logWriter); err != nil {
+			return fmt.Errorf("install_name_tool -add_rpath %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// shouldRelocate returns true for files we want to make position-independent:
+// any dylib, plus the three named binaries the shims dispatch to.
+func shouldRelocate(name string) bool {
+	if filepath.Ext(name) == ".dylib" {
+		return true
+	}
+	for _, bin := range binaryNames {
+		if name == bin {
+			return true
+		}
+	}
+	return false
 }
 
 // symlinkBinaries creates staging/bin/<name> -> ../source/build/bin/<name>

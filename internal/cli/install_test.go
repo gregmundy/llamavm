@@ -60,7 +60,7 @@ type recordedCall struct {
 
 func (r *fakeCmdRunner) Run(ctx context.Context, name string, args []string, dir string, stdout, stderr io.Writer) error {
 	r.calls = append(r.calls, recordedCall{Name: name, Args: append([]string(nil), args...), Dir: dir})
-	if r.cloneFn != nil {
+	if r.cloneFn != nil && name == "git" {
 		return r.cloneFn(args, dir)
 	}
 	return nil
@@ -264,6 +264,32 @@ func TestInstall_HappyPath(t *testing.T) {
 		}
 		if _, err := os.Stat(link); err != nil {
 			t.Errorf("symlink %s does not resolve in the final dir: %v", name, err)
+		}
+	}
+	// install_name_tool must have been invoked once per relocatable binary
+	// to rewrite the absolute build-dir LC_RPATH to @loader_path. cmake bakes
+	// the build dir's absolute path in at link time; without this rewrite the
+	// dylibs become unfindable after staging→final dir rename.
+	stagingBin := filepath.Join(store.root, "versions", ".staging-b5046", "source", "build", "bin")
+	wantTargets := map[string]bool{}
+	for _, n := range []string{"llama-cli", "llama-server", "llama-quantize"} {
+		wantTargets[filepath.Join(stagingBin, n)] = false
+	}
+	for _, c := range r.calls {
+		if c.Name != "install_name_tool" {
+			continue
+		}
+		if len(c.Args) < 2 {
+			continue
+		}
+		target := c.Args[len(c.Args)-1]
+		if _, ok := wantTargets[target]; ok {
+			wantTargets[target] = true
+		}
+	}
+	for target, seen := range wantTargets {
+		if !seen {
+			t.Errorf("expected install_name_tool to be called on %s, not seen", target)
 		}
 	}
 	if !strings.Contains(out, "Installed b5046") {
