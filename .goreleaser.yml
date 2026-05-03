@@ -50,24 +50,32 @@ changelog:
       - "^chore:"
       - "^test:"
 
-brews:
+homebrew_casks:
   - name: llamavm
+    binaries:
+      - llamavm
+      - llamavm-shim
     repository:
       owner: gregmundy
       name: homebrew-tap
-      # Use the fine-grained PAT (Contents: write on homebrew-tap) instead
-      # of the workflow's default GITHUB_TOKEN, which is scoped to the
-      # llamavm repo and would 403 ("Resource not accessible by integration")
-      # when pushing the formula to a different repo.
+      # Fine-grained PAT (Contents: write on homebrew-tap). The workflow's
+      # default GITHUB_TOKEN is scoped to the llamavm repo and would 403
+      # ("Resource not accessible by integration") when pushing to a
+      # different repo.
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Formula
     homepage: "https://github.com/gregmundy/llamavm"
     description: "Version manager for llama.cpp on Apple Silicon"
     license: "MIT"
-    skip_upload: false
-    install: |
-      bin.install "llamavm"
-      bin.install "llamavm-shim"
+    # Casks are quarantined on download by default; our binaries are
+    # cross-compiled, unsigned, and unnotarized, so without this hook
+    # macOS Gatekeeper would refuse to launch them. Strip the
+    # com.apple.quarantine xattr at install time.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", staged_path]
+          end
     caveats: |
       llamavm needs its shims directory on PATH. Add this to your shell rc:
 
@@ -77,5 +85,3 @@ brews:
 
         llamavm install latest
         llamavm doctor
-    test: |
-      assert_match "llamavm version", shell_output("#{bin}/llamavm --version")
