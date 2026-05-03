@@ -19,7 +19,11 @@ import (
 
 const llamaCppRepoURL = "https://github.com/ggml-org/llama.cpp.git"
 
-var binaryNames = []string{"llama-cli", "llama-server", "llama-quantize"}
+// binaryNames are symlinked into <version>/bin/ during install (so shim
+// dispatch can find them) AND get the LC_RPATH @loader_path rewrite so they
+// load dylibs after the staging→final dir rename. llama-bench is included
+// because the bench Runner invokes it; it is not exposed via shim.
+var binaryNames = []string{"llama-cli", "llama-server", "llama-quantize", "llama-bench"}
 var validTagRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 func newInstallCmd(deps *Deps) *cobra.Command {

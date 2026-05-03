@@ -151,7 +151,7 @@ func newInstallDeps(t *testing.T, store Store) (*Deps, *fakeGitHub, *fakeBuilder
 		if err := os.MkdirAll(bin, 0o755); err != nil {
 			return err
 		}
-		for _, name := range []string{"llama-cli", "llama-server", "llama-quantize"} {
+		for _, name := range binaryNames {
 			if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
 				return err
 			}
@@ -264,7 +264,7 @@ func TestInstall_HappyPath(t *testing.T) {
 	// Bin symlinks must exist in final dir, BE RELATIVE (so they survive
 	// the staging→final dir rename), AND resolve to the build artifact.
 	finalBin := filepath.Join(store.root, "versions", "b5046", "bin")
-	for _, name := range []string{"llama-cli", "llama-server", "llama-quantize"} {
+	for _, name := range binaryNames {
 		link := filepath.Join(finalBin, name)
 		fi, err := os.Lstat(link)
 		if err != nil {
@@ -290,7 +290,7 @@ func TestInstall_HappyPath(t *testing.T) {
 	// dylibs become unfindable after staging→final dir rename.
 	stagingBin := filepath.Join(store.root, "versions", ".staging-b5046", "source", "build", "bin")
 	wantTargets := map[string]bool{}
-	for _, n := range []string{"llama-cli", "llama-server", "llama-quantize"} {
+	for _, n := range binaryNames {
 		wantTargets[filepath.Join(stagingBin, n)] = false
 	}
 	for _, c := range r.calls {
