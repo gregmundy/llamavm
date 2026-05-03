@@ -79,26 +79,40 @@ func (r *Runner) Run(ctx context.Context, tag, modelPath string, useCache bool) 
 		"-n", "256",
 		"--no-display-prompt",
 		"-ngl", "99",
+		// -st (single-turn) tells llama-cli to exit after one model response
+		// instead of auto-entering conversation mode for chat-templated models.
+		// Without it, chat-tuned models (Gemma-it, Llama-Instruct, etc.) loop
+		// forever printing the conv-mode `>` prompt while waiting for stdin
+		// that never arrives, producing GBs of garbage and never returning.
+		"-st",
 	}
-	var stderr bytes.Buffer
-	if err := r.Cmd.Run(ctx, bin, args, "", io.Discard, &stderr); err != nil {
-		return Result{}, fmt.Errorf("run llama-cli: %w", err)
-	}
-
-	stats, err := Parse(stderr.String())
-	if err != nil {
-		return Result{}, fmt.Errorf("%s: %w", tag, err)
-	}
-
 	now := r.Now
 	if now == nil {
 		now = time.Now
 	}
+	// Wall-clock measurement: includes model load + setup overhead, which is
+	// what the user actually waits through. Replaces the parser's old
+	// `total time =` extraction (the b9010+ output format dropped that line).
+	var stdout, stderr bytes.Buffer
+	start := now()
+	if err := r.Cmd.Run(ctx, bin, args, "", &stdout, &stderr); err != nil {
+		return Result{}, fmt.Errorf("run llama-cli: %w", err)
+	}
+	elapsed := now().Sub(start)
+
+	// New format (b9010+) lives on stdout; legacy llama_perf_* lines live on
+	// stderr. Concat so Parse can match either without the runner needing to
+	// know which version it's talking to.
+	stats, err := Parse(stdout.String() + stderr.String())
+	if err != nil {
+		return Result{}, fmt.Errorf("%s: %w", tag, err)
+	}
+
 	res := Result{
 		Version:          tag,
 		ModelFingerprint: fp,
 		TokensPerSec:     stats.TokensPerSec,
-		TotalTimeSeconds: stats.TotalTimeSeconds,
+		TotalTimeSeconds: elapsed.Seconds(),
 		RanAt:            now().UTC(),
 	}
 	if err := r.Cache.Store(res); err != nil {

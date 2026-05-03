@@ -7,6 +7,15 @@ import (
 	"testing"
 )
 
+// New format (b9010+, single line on stdout when llama-cli runs with -st).
+const newFormatStdout = `
+Some essay text from the model goes here. Lots of it. Multiple lines.
+
+[ Prompt: 280.3 t/s | Generation: 33.6 t/s ]
+
+Exiting...
+`
+
 const modernStderr = `
 ggml_metal_init: allocating
 llama_model_loader: loaded meta data
@@ -29,7 +38,31 @@ llama_print_timings:       total time =  5211.06 ms
 
 func nearly(a, b, eps float64) bool { return math.Abs(a-b) <= eps }
 
-func TestParse_ModernFormat_TokensPerSec(t *testing.T) {
+func TestParse_NewFormat(t *testing.T) {
+	got, err := Parse(newFormatStdout)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !nearly(got.TokensPerSec, 33.6, 0.01) {
+		t.Fatalf("TokensPerSec = %v, want ~33.6", got.TokensPerSec)
+	}
+}
+
+func TestParse_NewFormatPreferredOverLegacy(t *testing.T) {
+	// If both appear (unlikely but defensive), the new format wins because it
+	// reflects the user-visible inline summary that the build is actually
+	// emitting going forward.
+	combined := newFormatStdout + modernStderr
+	got, err := Parse(combined)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !nearly(got.TokensPerSec, 33.6, 0.01) {
+		t.Fatalf("TokensPerSec = %v, want 33.6 (new format), got legacy 44.72?", got.TokensPerSec)
+	}
+}
+
+func TestParse_ModernLegacyFormat_TokensPerSec(t *testing.T) {
 	got, err := Parse(modernStderr)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -39,18 +72,8 @@ func TestParse_ModernFormat_TokensPerSec(t *testing.T) {
 	}
 }
 
-func TestParse_ModernFormat_TotalTime(t *testing.T) {
-	got, err := Parse(modernStderr)
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	if !nearly(got.TotalTimeSeconds, 9.75614, 0.0001) {
-		t.Fatalf("TotalTimeSeconds = %v, want ~9.75614", got.TotalTimeSeconds)
-	}
-}
-
-func TestParse_LegacyFormat_TokensPerSecComputedFromMsPerToken(t *testing.T) {
-	// Legacy line gives only ms-per-token; parser must compute t/s = 1000/ms.
+func TestParse_OldestLegacyFormat_TokensPerSecComputedFromMsPerToken(t *testing.T) {
+	// Oldest legacy line gives only ms-per-token; parser computes t/s = 1000/ms.
 	got, err := Parse(legacyStderr)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -61,29 +84,9 @@ func TestParse_LegacyFormat_TokensPerSecComputedFromMsPerToken(t *testing.T) {
 	}
 }
 
-func TestParse_LegacyFormat_TotalTime(t *testing.T) {
-	got, err := Parse(legacyStderr)
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	if !nearly(got.TotalTimeSeconds, 5.21106, 0.0001) {
-		t.Fatalf("TotalTimeSeconds = %v, want ~5.21106", got.TotalTimeSeconds)
-	}
-}
-
-func TestParse_MissingEvalLineIsErrParse(t *testing.T) {
-	missingEval := strings.Replace(modernStderr,
-		"llama_perf_context_print:        eval time", "llama_perf_context_print:        EVAL_TIME_GONE", 1)
-	if _, err := Parse(missingEval); !errors.Is(err, ErrParse) {
-		t.Fatalf("Parse(no eval line): got %v, want ErrParse", err)
-	}
-}
-
-func TestParse_MissingTotalLineIsErrParse(t *testing.T) {
-	missingTotal := strings.Replace(modernStderr,
-		"llama_perf_context_print:       total time", "llama_perf_context_print:       TOTAL_GONE", 1)
-	if _, err := Parse(missingTotal); !errors.Is(err, ErrParse) {
-		t.Fatalf("Parse(no total line): got %v, want ErrParse", err)
+func TestParse_MissingAnyKnownFormatIsErrParse(t *testing.T) {
+	if _, err := Parse("totally unrelated output\nno metrics here\n"); !errors.Is(err, ErrParse) {
+		t.Fatalf("Parse(garbage): got %v, want ErrParse", err)
 	}
 }
 
@@ -93,14 +96,14 @@ func TestParse_EmptyInputIsErrParse(t *testing.T) {
 	}
 }
 
-func TestParse_PrefersTokensPerSecOverComputedWhenBothAvailable(t *testing.T) {
-	// Sanity: when the modern format has both "X ms per token" and "Y tokens
-	// per second", we trust Y rather than recomputing from X.
+func TestParse_LegacyPrefersInlineTokensPerSecOverComputed(t *testing.T) {
+	// Sanity: when the modern legacy format has both "X ms per token" and
+	// "Y tokens per second", we trust Y rather than recomputing from X.
 	got, err := Parse(modernStderr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Modern eval line has 22.36 ms/tok and 44.72 t/s. 1000/22.36 ≈ 44.72,
+	// Modern legacy eval line has 22.36 ms/tok and 44.72 t/s. 1000/22.36 ≈ 44.72,
 	// but if the parser ever recomputes from a slightly different ms value,
 	// the second-decimal exact match here pins it to the inline value.
 	if got.TokensPerSec < 44.72-0.005 || got.TokensPerSec > 44.72+0.005 {
@@ -108,12 +111,11 @@ func TestParse_PrefersTokensPerSecOverComputedWhenBothAvailable(t *testing.T) {
 	}
 }
 
-func TestParse_TolersExtraMetricInsideParens(t *testing.T) {
+func TestParse_LegacyTolersExtraMetricInsideParens(t *testing.T) {
 	// If a future llama.cpp build adds another metric inside the parens
 	// (e.g. GFLOP/s) before "tokens per second", the inline value should
 	// still be used — not silently discarded in favour of the computed
-	// 1000/ms_per_token fallback. The fixture below differs from modernStderr
-	// only by inserting "1.50 GFLOP/s," between the two existing metrics.
+	// 1000/ms_per_token fallback.
 	stderr := strings.Replace(modernStderr,
 		"22.36 ms per token,    44.72 tokens per second",
 		"22.36 ms per token,    1.50 GFLOP/s,    44.72 tokens per second",
@@ -127,7 +129,7 @@ func TestParse_TolersExtraMetricInsideParens(t *testing.T) {
 	}
 }
 
-func TestParse_SingleRunNoTrailingS(t *testing.T) {
+func TestParse_LegacySingleRunNoTrailingS(t *testing.T) {
 	// Lock in the regex's `runs?` permissiveness so a future tightening
 	// doesn't break a 1-run benchmark output.
 	stderr := strings.Replace(modernStderr,

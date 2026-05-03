@@ -11,21 +11,25 @@ import (
 )
 
 // fakeCmdRunner records the arguments it was called with and writes a
-// scripted body to stderr.
+// scripted body to stdout/stderr.
 type fakeCmdRunner struct {
 	gotName  string
 	gotArgs  []string
 	gotDir   string
+	stdoutFn func(io.Writer)
 	stderrFn func(io.Writer)
 	err      error
 	calls    int
 }
 
-func (r *fakeCmdRunner) Run(_ context.Context, name string, args []string, dir string, _, stderr io.Writer) error {
+func (r *fakeCmdRunner) Run(_ context.Context, name string, args []string, dir string, stdout, stderr io.Writer) error {
 	r.gotName = name
 	r.gotArgs = append([]string(nil), args...)
 	r.gotDir = dir
 	r.calls++
+	if r.stdoutFn != nil {
+		r.stdoutFn(stdout)
+	}
 	if r.stderrFn != nil {
 		r.stderrFn(stderr)
 	}
@@ -78,7 +82,7 @@ func TestRunner_HappyPath_PassesPRDArgs(t *testing.T) {
 	if cmd.gotName != cli {
 		t.Fatalf("invoked %q, want %q", cmd.gotName, cli)
 	}
-	wantArgs := []string{"-m", model, "-p", BenchmarkPrompt, "-n", "256", "--no-display-prompt", "-ngl", "99"}
+	wantArgs := []string{"-m", model, "-p", BenchmarkPrompt, "-n", "256", "--no-display-prompt", "-ngl", "99", "-st"}
 	if !equalStrings(cmd.gotArgs, wantArgs) {
 		t.Fatalf("argv = %v\nwant      %v", cmd.gotArgs, wantArgs)
 	}
@@ -302,6 +306,65 @@ func TestRunner_BinaryStatErrorIsNotMisreportedAsNotFound(t *testing.T) {
 	}
 	if errors.Is(err, ErrBinaryNotFound) {
 		t.Fatalf("err = %v, want a non-NotFound error (real cause is ENOTDIR)", err)
+	}
+}
+
+func TestRunner_NewFormatOnStdoutIsParsed(t *testing.T) {
+	// b9010+ writes the perf summary as a single line on STDOUT (not stderr).
+	// Verify the runner concats both streams and the parser finds it.
+	model := writeModelFile(t, fillBytes(8192, 'm'))
+	r := newRunnerWithCache(t, &fakeCmdRunner{
+		stdoutFn: func(w io.Writer) { _, _ = w.Write([]byte(newFormatStdout)) },
+		// stderr left empty — only metal init noise in real builds, no
+		// llama_perf_* lines anymore.
+	}, time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC))
+	touchLlamaCLI(t, r.VersionsDir, "b9010")
+
+	res, err := r.Run(context.Background(), "b9010", model, true)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// newFormatStdout has "Generation: 33.6 t/s".
+	if res.TokensPerSec < 33.5 || res.TokensPerSec > 33.7 {
+		t.Fatalf("TokensPerSec = %v, want ~33.6 (parsed from new stdout format)", res.TokensPerSec)
+	}
+}
+
+func TestRunner_TotalTimeSecondsIsWallClock(t *testing.T) {
+	// TotalTimeSeconds must come from the runner's wall-clock measurement
+	// (now() before exec, now() after), not from a parsed `total time =` line.
+	// Wire a Now that advances by 7.5s on the second call and verify the
+	// Result reflects that, even though the legacy fixture stderr says
+	// "total time = 9756.14 ms" (parser doesn't read total time anymore).
+	model := writeModelFile(t, fillBytes(8192, 'm'))
+	start := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
+	calls := 0
+	r := &Runner{
+		Cmd: &fakeCmdRunner{
+			stderrFn: func(w io.Writer) { _, _ = w.Write([]byte(modernStderr)) },
+		},
+		Cache:       &Cache{Dir: t.TempDir()},
+		VersionsDir: t.TempDir(),
+		Now: func() time.Time {
+			calls++
+			switch calls {
+			case 1:
+				return start
+			case 2:
+				return start.Add(7500 * time.Millisecond)
+			default:
+				return start.Add(8 * time.Second) // RanAt
+			}
+		},
+	}
+	touchLlamaCLI(t, r.VersionsDir, "b5046")
+
+	res, err := r.Run(context.Background(), "b5046", model, true)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.TotalTimeSeconds < 7.49 || res.TotalTimeSeconds > 7.51 {
+		t.Fatalf("TotalTimeSeconds = %v, want ~7.5 (wall-clock from mocked Now)", res.TotalTimeSeconds)
 	}
 }
 
