@@ -122,20 +122,27 @@ func runInstall(ctx context.Context, deps *Deps, requested string) error {
 	return nil
 }
 
-// symlinkBinaries creates staging/bin/<name> -> staging/source/build/bin/<name>
-// for each binary in binaryNames.
+// symlinkBinaries creates staging/bin/<name> -> ../source/build/bin/<name>
+// for each binary in binaryNames. Targets are RELATIVE so the symlinks
+// survive the staging→final dir rename in PromoteStaging — an absolute
+// target would still spell `.staging-<tag>` after the parent's rename and
+// dangle.
 func symlinkBinaries(staging, source string) error {
 	binDir := filepath.Join(staging, "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		return fmt.Errorf("create bin dir: %w", err)
 	}
 	for _, name := range binaryNames {
-		target := filepath.Join(source, "build", "bin", name)
-		if _, err := os.Stat(target); err != nil {
+		absTarget := filepath.Join(source, "build", "bin", name)
+		if _, err := os.Stat(absTarget); err != nil {
 			return fmt.Errorf("missing built binary %s: %w", name, err)
 		}
 		link := filepath.Join(binDir, name)
-		if err := os.Symlink(target, link); err != nil {
+		relTarget, err := filepath.Rel(binDir, absTarget)
+		if err != nil {
+			return fmt.Errorf("compute relative target for %s: %w", name, err)
+		}
+		if err := os.Symlink(relTarget, link); err != nil {
 			return fmt.Errorf("symlink %s: %w", name, err)
 		}
 	}

@@ -37,7 +37,12 @@ type Builder struct {
 // cmake invocations write combined stdout+stderr to logWriter so callers can
 // preserve build output on failure.
 func (b *Builder) Build(ctx context.Context, srcDir string, logWriter io.Writer) error {
-	configure := []string{"-B", "build", "-DGGML_METAL=ON", "-DCMAKE_BUILD_TYPE=Release"}
+	// CMAKE_BUILD_RPATH_USE_ORIGIN makes cmake embed @loader_path-style rpaths
+	// instead of absolute paths to the build dir. Without it, the linked
+	// binaries' rpath references the build directory's absolute location, so
+	// promoting `<root>/.staging-<tag>` → `<root>/<tag>` post-build leaves the
+	// binaries searching for dylibs at a path that no longer exists.
+	configure := []string{"-B", "build", "-DGGML_METAL=ON", "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_BUILD_RPATH_USE_ORIGIN=ON"}
 	if err := b.Runner.Run(ctx, "cmake", configure, srcDir, logWriter, logWriter); err != nil {
 		return fmt.Errorf("cmake configure: %w", err)
 	}

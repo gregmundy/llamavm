@@ -54,7 +54,7 @@ func TestBuilder_Build_RunsConfigureThenBuild(t *testing.T) {
 	if cfg.Dir != "/tmp/src" {
 		t.Errorf("configure dir = %q, want /tmp/src", cfg.Dir)
 	}
-	wantConfigure := []string{"-B", "build", "-DGGML_METAL=ON", "-DCMAKE_BUILD_TYPE=Release"}
+	wantConfigure := []string{"-B", "build", "-DGGML_METAL=ON", "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_BUILD_RPATH_USE_ORIGIN=ON"}
 	if !equalArgs(cfg.Args, wantConfigure) {
 		t.Errorf("configure args = %v, want %v", cfg.Args, wantConfigure)
 	}

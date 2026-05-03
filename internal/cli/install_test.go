@@ -243,15 +243,27 @@ func TestInstall_HappyPath(t *testing.T) {
 	if !strings.HasSuffix(b.srcDir, "source") {
 		t.Fatalf("builder srcDir = %q", b.srcDir)
 	}
-	// Bin symlinks must exist in final dir.
+	// Bin symlinks must exist in final dir, BE RELATIVE (so they survive
+	// the staging→final dir rename), AND resolve to the build artifact.
 	finalBin := filepath.Join(store.root, "versions", "b5046", "bin")
 	for _, name := range []string{"llama-cli", "llama-server", "llama-quantize"} {
-		fi, err := os.Lstat(filepath.Join(finalBin, name))
+		link := filepath.Join(finalBin, name)
+		fi, err := os.Lstat(link)
 		if err != nil {
 			t.Fatalf("expected symlink %s: %v", name, err)
 		}
 		if fi.Mode()&os.ModeSymlink == 0 {
 			t.Errorf("%s is not a symlink (mode=%v)", name, fi.Mode())
+		}
+		target, err := os.Readlink(link)
+		if err != nil {
+			t.Fatalf("readlink %s: %v", name, err)
+		}
+		if filepath.IsAbs(target) {
+			t.Errorf("%s symlink target %q is absolute; must be relative so it survives staging→final rename", name, target)
+		}
+		if _, err := os.Stat(link); err != nil {
+			t.Errorf("symlink %s does not resolve in the final dir: %v", name, err)
 		}
 	}
 	if !strings.Contains(out, "Installed b5046") {
