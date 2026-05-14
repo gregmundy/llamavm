@@ -31,7 +31,7 @@ archives:
       - llamavm
       - llamavm-shim
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format: tar.gz
+    formats: [tar.gz]
     files:
       - LICENSE*
       - README.md
